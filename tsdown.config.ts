@@ -9,6 +9,8 @@ const CSS_VIRTUAL_SUFFIX = '.mjs'
 const sharedExternals = [
   '@deepseek-ai/cordis',
   '@deepseek-ai/dsh-agent',
+  '@deepseek-ai/dsh-llm',
+  '@deepseek-ai/dsh-session',
   '@deepseek-ai/dsh-tools',
   '@deepseek-ai/dsh-typert-protocol',
   '@deepseek-ai/dsh-client-runtime',
@@ -55,7 +57,12 @@ export default defineConfig([
     // zod backs the generated-style Remote boundary codecs and is not a web
     // platform module, so it must travel inside this closure bundle.
     deps: {
-      neverBundle: ['react', 'react/jsx-runtime'],
+      neverBundle: [
+        '@deepseek-ai/dsh-client-ui-attachment',
+        '@deepseek-ai/dsh-client-ui-primitives',
+        'react',
+        'react/jsx-runtime',
+      ],
       alwaysBundle: ['zod'],
     },
     plugins: [{

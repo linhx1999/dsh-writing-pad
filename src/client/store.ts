@@ -4,8 +4,7 @@ export interface WritingPadEntry {
   open: boolean
   draft: string
   status: 'idle' | 'saving' | 'saved' | 'error'
-  fileName: string
-  fileStatus: string
+  notice: string
   mode: 'edit' | 'preview'
   selStart: number
   selEnd: number
@@ -17,8 +16,7 @@ export const defaultEntry = (): WritingPadEntry => ({
   open: false,
   draft: '',
   status: 'idle',
-  fileName: 'draft.md',
-  fileStatus: '',
+  notice: '',
   mode: 'edit',
   selStart: 0,
   selEnd: 0,
@@ -45,7 +43,7 @@ export function createWritingPadStore(): WritingPadStore {
       return entry
     },
     setEntry(sessionId, patch) {
-      Object.assign(this.entryOf(sessionId), patch)
+      entries.set(sessionId, { ...this.entryOf(sessionId), ...patch })
       for (const fn of listeners) fn()
     },
     subscribe(listener) {

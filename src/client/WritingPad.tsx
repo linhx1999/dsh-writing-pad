@@ -1,7 +1,8 @@
-/** The writing pad: Markdown editor, preview, AI rewrite request, file ops. */
+/** Session-backed Markdown writing pad and its structured AI request flow. */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { serializeWritingRequest, type WritingSelection } from '../draft-xml.ts'
 import { renderMarkdown } from './markdown.ts'
 import type { WritingPadStore } from './store.ts'
 import './writing-pad.css'
@@ -9,8 +10,6 @@ import './writing-pad.css'
 export interface WritingPadBridge {
   saveDraft(sessionId: string, text: string): Promise<{ saved: boolean }>
   loadDraft(sessionId: string): Promise<{ text: string }>
-  saveFile(sessionId: string, name: string, text: string): Promise<{ ok: boolean; error?: string; path?: string }>
-  loadFile(sessionId: string, name: string): Promise<{ ok: boolean; error?: string; path?: string; text?: string }>
 }
 
 export type WritingPadProps = PropsRuntime<'details'> & {
@@ -19,38 +18,45 @@ export type WritingPadProps = PropsRuntime<'details'> & {
   onClose(sessionId: string): void
 }
 
-const STATUS_TEXT: Record<string, string> = { idle: '', saving: '保存中…', saved: '已保存', error: '保存失败' }
+const STATUS_TEXT: Record<string, string> = {
+  idle: '',
+  saving: '暂存中…',
+  saved: '已暂存',
+  error: '暂存失败',
+}
 
 export function WritingPad(props: WritingPadProps) {
   const { sessionId: sid, store, bridge, onClose } = props
-  const [entry, setEntry] = useState(() => store.entryOf(sid))
-  useEffect(() => store.subscribe(() => setEntry(store.entryOf(sid))), [store, sid])
+  const [busy, setBusy] = useState(false)
+  const entry = useSyncExternalStore(store.subscribe, () => store.entryOf(sid))
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => () => {
     if (saveTimer.current !== null) clearTimeout(saveTimer.current)
   }, [])
 
-  // Restore the session draft on first open (after a page refresh the host
-  // memory is the source of truth).
+  // Host memory is the typing fast path. After a restart, loadDraft folds the
+  // latest user-request snapshot and successful writing_draft results.
   useEffect(() => {
     if (store.entryOf(sid).draft !== '') return
     bridge.loadDraft(sid).then((res) => {
-      if (res.text) store.setEntry(sid, { draft: res.text })
+      if (res.text !== '') store.setEntry(sid, { draft: res.text, status: 'saved' })
     }).catch(() => {})
   }, [sid, store, bridge])
 
-  // Poll the host draft so agent-side writing_draft rewrites appear
-  // automatically. Skip while the user is typing (status saving).
+  // Agent-side writing_draft calls update Host memory. Polling keeps the pad
+  // current without subscribing to the full conversation event stream.
   useEffect(() => {
     const timer = setInterval(() => {
       if (store.entryOf(sid).status === 'saving') return
       bridge.loadDraft(sid).then((res) => {
-        const cur = store.entryOf(sid)
-        if (cur.status === 'saving') return
-        if (res.text !== cur.draft) {
-          store.setEntry(sid, { draft: res.text, fileStatus: '已自动同步最新草稿', status: 'saved' })
-        }
+        const current = store.entryOf(sid)
+        if (current.status === 'saving' || res.text === current.draft) return
+        store.setEntry(sid, {
+          draft: res.text,
+          notice: '已自动同步模型写回的最新草稿',
+          status: 'saved',
+        })
       }).catch(() => {})
     }, 2000)
     return () => clearInterval(timer)
@@ -61,78 +67,98 @@ export function WritingPad(props: WritingPadProps) {
     if (saveTimer.current !== null) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => {
       saveTimer.current = null
-      bridge.saveDraft(sid, text).then(() => store.setEntry(sid, { status: 'saved' }))
+      bridge.saveDraft(sid, text)
+        .then(() => store.setEntry(sid, { status: 'saved' }))
         .catch(() => store.setEntry(sid, { status: 'error' }))
     }, 800)
   }
 
-  const handleSaveFile = (): void => {
-    const name = store.entryOf(sid).fileName.trim() || 'draft.md'
-    store.setEntry(sid, { fileStatus: '正在保存到文件…' })
-    bridge.saveFile(sid, name, store.entryOf(sid).draft).then((res) => {
-      if (res.ok) store.setEntry(sid, { fileName: res.path ?? name, fileStatus: `已保存到 ${res.path}`, status: 'saved' })
-      else store.setEntry(sid, { fileStatus: `保存失败：${res.error ?? '未知错误'}` })
-    }).catch(() => store.setEntry(sid, { fileStatus: '保存失败' }))
+  const handleClose = async (): Promise<void> => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await bridge.saveDraft(sid, store.entryOf(sid).draft)
+      onClose(sid)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '未知错误'
+      store.setEntry(sid, { notice: `关闭前暂存失败：${message}`, status: 'error' })
+    } finally {
+      setBusy(false)
+    }
   }
 
-  const handleLoadFile = (): void => {
-    const name = store.entryOf(sid).fileName.trim() || 'draft.md'
-    store.setEntry(sid, { fileStatus: '正在加载文件…' })
-    bridge.loadFile(sid, name).then((res) => {
-      if (res.ok && res.text !== undefined) {
-        store.setEntry(sid, { draft: res.text, fileName: res.path ?? name, fileStatus: `已加载 ${res.path}`, status: 'saved' })
-      } else {
-        store.setEntry(sid, { fileStatus: `加载失败：${res.error ?? '未知错误'}` })
-      }
-    }).catch(() => store.setEntry(sid, { fileStatus: '加载失败' }))
-  }
-
-  const handleRewriteRequest = (): void => {
-    const inputActions = props.inputActions
-    let selection = ''
+  const selectedText = (): WritingSelection | undefined => {
     if (entry.mode === 'preview') {
-      selection = entry.previewSel.trim()
-      if (selection.length === 0) {
-        store.setEntry(sid, { fileStatus: '请先在预览中划选一段文字' })
-        return
-      }
-    } else {
-      const start = entry.selStart
-      const end = entry.selEnd
-      if (end <= start) {
-        store.setEntry(sid, { fileStatus: '请先在写作区选中一段文字' })
-        return
-      }
-      selection = entry.draft.slice(start, end).trim()
+      return entry.previewSel.trim() === ''
+        ? undefined
+        : { mode: 'preview', text: entry.previewSel }
     }
-    if (selection.length === 0) {
-      store.setEntry(sid, { fileStatus: '选中的是空白内容' })
-      return
-    }
+    const start = entry.selStart
+    const end = entry.selEnd
+    const text = end > start ? entry.draft.slice(start, end) : ''
+    return text.trim() === '' ? undefined : { mode: 'edit', start, end, text }
+  }
+
+  const handleWritingRequest = async (): Promise<void> => {
+    if (busy) return
+    const inputActions = props.inputActions
     if (inputActions === undefined) {
-      store.setEntry(sid, { fileStatus: '当前会话不支持发送到对话' })
+      store.setEntry(sid, { notice: '当前会话不支持发送写作请求' })
       return
     }
+    const selection = selectedText()
+    const operation = selection === undefined ? 'write' : 'rewrite'
     const note = entry.rewriteNote.trim()
-    let text = '请改写我在写作板中选中的这段文字，保持原意、改善表达。请先调用 writing_draft 工具（action=read）读取当前草稿，找到与这段文字对应的原文（含 Markdown 标记），改写后用 writing_draft 工具（action=rewrite，old=原文，new=改写结果）写回草稿。'
-    if (note.length > 0) text += '\n改写要求：' + note
-    text += '\n选中的文字：\n' + selection
-    inputActions.setDraft(text)
-    inputActions.submit()
-    store.setEntry(sid, { fileStatus: '改写请求已发送到对话，完成后点「同步」拉取草稿', previewSel: '', rewriteNote: '' })
+    if (operation === 'write' && note === '') {
+      store.setEntry(sid, { notice: '请输入要生成的内容；选中文字时则会改写该片段' })
+      return
+    }
+    const instruction = note === '' ? '保持原意，改善表达，使文字更清晰流畅。' : note
+
+    setBusy(true)
+    try {
+      const draft = store.entryOf(sid).draft
+      await bridge.saveDraft(sid, draft)
+      // This is the one real user message for the turn. Carrying the complete
+      // draft here keeps it model-visible and durable without inserting a
+      // user/message between assistant(tool_calls) and tool/result.
+      inputActions.setDraft(serializeWritingRequest({ operation, draft, instruction, selection }))
+      inputActions.submit()
+      store.setEntry(sid, {
+        notice: operation === 'write'
+          ? '生成请求已发送；模型会通过 writing_draft 把完整结果写回此处'
+          : '改写请求已发送；模型会通过 writing_draft 把修改结果写回此处',
+        previewSel: '',
+        rewriteNote: '',
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '未知错误'
+      store.setEntry(sid, { notice: `请求发送失败：${message}`, status: 'error' })
+    } finally {
+      setBusy(false)
+    }
   }
 
-  const trackSelection = (e: React.SyntheticEvent<HTMLTextAreaElement>): void => {
-    store.setEntry(sid, { selStart: e.currentTarget.selectionStart, selEnd: e.currentTarget.selectionEnd })
+  const handleSync = async (): Promise<void> => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const res = await bridge.loadDraft(sid)
+      store.setEntry(sid, { draft: res.text, notice: '已同步当前会话草稿', status: 'saved' })
+    } catch {
+      store.setEntry(sid, { notice: '同步失败', status: 'error' })
+    } finally {
+      setBusy(false)
+    }
   }
 
-  const chars = entry.draft.replace(/\s+/g, '').length
-  const words = entry.draft.trim() ? entry.draft.trim().split(/\s+/).length : 0
-  let hint = '选中一段文字后，把改写请求发到对话，AI 会在会话中完成并写回草稿'
-  if (entry.mode === 'preview') {
-    const sel = entry.previewSel.trim()
-    hint = sel.length > 0 ? `已选中：${sel.slice(0, 16)}${sel.length > 16 ? '…' : ''}` : '在预览中划选一段文字后，点按钮把改写请求发到对话'
+  const trackSelection = (event: React.SyntheticEvent<HTMLTextAreaElement>): void => {
+    store.setEntry(sid, {
+      selStart: event.currentTarget.selectionStart,
+      selEnd: event.currentTarget.selectionEnd,
+    })
   }
+
   const capturePreviewSelection = (): void => {
     let selected = ''
     try {
@@ -145,16 +171,26 @@ export function WritingPad(props: WritingPadProps) {
     store.setEntry(sid, { previewSel: selected })
   }
 
+  const selection = selectedText()
+  const isRewrite = selection !== undefined
+  const chars = entry.draft.replace(/\s+/g, '').length
+  const words = entry.draft.trim() === '' ? 0 : entry.draft.trim().split(/\s+/).length
+  const hint = isRewrite
+    ? `已选中：${selection.text.trim().slice(0, 16)}${selection.text.trim().length > 16 ? '…' : ''}`
+    : entry.draft === ''
+      ? '输入写作要求，模型会把完整结果直接写入此处'
+      : '未选择文字：发送请求将重新生成并替换全文'
+
   return (
     <div className="dsw-writing-pad">
       <div className="dsw-writing-pad-head">
         <span className="dsw-writing-pad-title">写作板</span>
-        <span className={'dsw-writing-pad-status ' + (entry.status ?? '')}>{STATUS_TEXT[entry.status] ?? ''}</span>
+        <span className={'dsw-writing-pad-status ' + entry.status}>{STATUS_TEXT[entry.status] ?? ''}</span>
         <div className="dsw-writing-pad-modes">
           <button type="button" className={'dsw-writing-pad-mode' + (entry.mode === 'edit' ? ' is-active' : '')} onClick={() => store.setEntry(sid, { mode: 'edit' })}>编辑</button>
           <button type="button" className={'dsw-writing-pad-mode' + (entry.mode === 'preview' ? ' is-active' : '')} onClick={() => store.setEntry(sid, { mode: 'preview' })}>预览</button>
         </div>
-        <button type="button" className="dsw-writing-pad-close" onClick={() => onClose(sid)}>✕</button>
+        <button type="button" className="dsw-writing-pad-close" disabled={busy} onClick={() => void handleClose()}>✕</button>
       </div>
       {entry.mode === 'preview' ? (
         <div className="dsw-writing-pad-preview" dangerouslySetInnerHTML={{ __html: renderMarkdown(entry.draft) }} onMouseUp={capturePreviewSelection} />
@@ -165,7 +201,7 @@ export function WritingPad(props: WritingPadProps) {
           placeholder="在这里开始写作… 支持 Markdown 纯文本。"
           autoFocus
           spellCheck={false}
-          onChange={(e) => handleDraftChange(e.target.value)}
+          onChange={(event) => handleDraftChange(event.target.value)}
           onFocus={trackSelection}
           onSelect={trackSelection}
           onKeyUp={trackSelection}
@@ -174,33 +210,27 @@ export function WritingPad(props: WritingPadProps) {
       <div className="dsw-writing-pad-tools">
         <div className="dsw-writing-pad-ai">
           <span className="dsw-writing-pad-ai-hint">{hint}</span>
-          <button type="button" className="dsw-writing-pad-ai-btn" onClick={handleRewriteRequest}>发送改写请求</button>
+          <button type="button" className="dsw-writing-pad-ai-btn" disabled={busy} onClick={() => void handleWritingRequest()}>
+            {busy ? '处理中…' : isRewrite ? '发送改写请求' : '生成全文'}
+          </button>
         </div>
         <div className="dsw-writing-pad-note">
           <input
             className="dsw-writing-pad-note-input"
             value={entry.rewriteNote}
-            placeholder="补充改写要求（可选），如：更口语化、更简洁、语气正式些…"
+            placeholder="输入生成要求；选中文字时作为改写要求"
             spellCheck={false}
-            onChange={(e) => store.setEntry(sid, { rewriteNote: e.target.value })}
+            onChange={(event) => store.setEntry(sid, { rewriteNote: event.target.value })}
           />
         </div>
-        <div className="dsw-writing-pad-file">
-          <input
-            className="dsw-writing-pad-file-input"
-            value={entry.fileName}
-            placeholder="draft.md（相对当前工作区）"
-            spellCheck={false}
-            onChange={(e) => store.setEntry(sid, { fileName: e.target.value })}
-          />
-          <button type="button" className="dsw-writing-pad-file-btn" onClick={handleSaveFile}>保存到文件</button>
-          <button type="button" className="dsw-writing-pad-file-btn" onClick={handleLoadFile}>加载</button>
-          <button type="button" className="dsw-writing-pad-file-btn" onClick={() => bridge.loadDraft(sid).then((res) => store.setEntry(sid, { draft: res.text, fileStatus: '已从草稿库同步', status: 'saved' })).catch(() => store.setEntry(sid, { fileStatus: '同步失败' }))}>同步</button>
+        <div className="dsw-writing-pad-checkpoint">
+          <span className="dsw-writing-pad-checkpoint-hint">完整草稿会随下一条写作请求发送，不写入工作区文件</span>
+          <button type="button" className="dsw-writing-pad-checkpoint-btn" disabled={busy} onClick={() => void handleSync()}>同步</button>
         </div>
-        <div className="dsw-writing-pad-file-status">{entry.fileStatus}</div>
+        <div className="dsw-writing-pad-notice">{entry.notice}</div>
         <div className="dsw-writing-pad-foot">
           <span>{chars} 字 · {words} 词</span>
-          <button type="button" className="dsw-writing-pad-clear" onClick={() => handleDraftChange('')}>清空</button>
+          <button type="button" className="dsw-writing-pad-clear" disabled={busy} onClick={() => handleDraftChange('')}>清空</button>
         </div>
       </div>
     </div>

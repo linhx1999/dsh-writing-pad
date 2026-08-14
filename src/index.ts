@@ -1,6 +1,6 @@
 /**
- * Host half of dsh-writing-pad: the writingPad Remote service (draft and
- * workspace-file operations for the client) and the writing_draft agent tool.
+ * Host half of dsh-writing-pad: the session-backed writingPad Remote service
+ * and the writing_draft agent tool.
  *
  * The service is a TypertRemoteService; `./remote` and `./typert` carry the
  * matching wire contribution (see README, "Client→Host bridge").
@@ -10,59 +10,15 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { deriveDraftFromSession, rewriteDraft } from './draft-session.ts'
 
-/** Minimal structural type for the optional `fs` service; the real contract lives in @deepseek-ai/dsh-fs. */
-interface FsLike {
-  resolve(path: string, opts?: { cwd?: string }): Promise<unknown>
-  readText(target: unknown): Promise<string>
-  writeText(target: unknown, content: string): Promise<unknown>
-}
-
-/** Process-local per-session draft buffers; a workspace file write is the durable form. */
+/** Process-local buffers keep typing cheap between durable conversation events. */
 const drafts = new Map<string, string>()
 
 const DEFAULT_KEY = '__default__'
 
 function keyOf(sessionId: string | undefined): string {
   return typeof sessionId === 'string' && sessionId.length > 0 ? sessionId : DEFAULT_KEY
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
-function validName(name: string): boolean {
-  if (name.length === 0 || name.length > 200) return false
-  if (name.startsWith('/') || name.includes('\\')) return false
-  return name.split('/').every((s) => s.length > 0 && s !== '.' && s !== '..')
-}
-
-function locateInDraft(draft: string, oldText: string): { start: number; end: number } | null {
-  const needle = oldText.trim()
-  if (needle.length === 0) return null
-  const idx = draft.indexOf(needle)
-  if (idx !== -1) return { start: idx, end: idx + needle.length }
-  const draftNorm = draft.replace(/\s+/g, ' ')
-  const needleNorm = needle.replace(/\s+/g, ' ')
-  const n = draftNorm.indexOf(needleNorm)
-  if (n === -1) return null
-  const map: number[] = []
-  let pending = -1
-  for (let i = 0; i < draft.length; i++) {
-    const c = draft[i]
-    if (/\s/.test(c)) {
-      if (pending === -1) pending = i
-      continue
-    }
-    if (pending !== -1) {
-      map.push(pending)
-      pending = -1
-    }
-    map.push(i)
-  }
-  const len = needleNorm.length
-  if (n + len > map.length) return null
-  return { start: map[n]!, end: map[n + len - 1]! + 1 }
 }
 
 type RemoteInitializer = (this: WritingPadService) => void
@@ -72,8 +28,6 @@ const remoteInitializers: RemoteInitializer[] = []
 export class WritingPadService extends TypertRemoteService {
   static inject = ['agents', 'tools']
 
-  private readonly cwd: string | undefined
-
   constructor(ctx: Context) {
     super(ctx, 'writingPad')
     // The published dependency exposes standard (stage-3) decorators, while
@@ -81,10 +35,6 @@ export class WritingPadService extends TypertRemoteService {
     // pass. Run the decorator initializers registered below explicitly so the
     // output is ordinary JavaScript on every supported Node release.
     for (const initialize of remoteInitializers) initialize.call(this)
-    const sandboxPolicy = ctx.get('sandboxPolicy')
-    this.cwd = sandboxPolicy !== undefined && typeof sandboxPolicy.workspaceRoot === 'string'
-      ? sandboxPolicy.workspaceRoot
-      : undefined
     ctx.effect(() => ctx.tools.register(this.toolDefinition()))
   }
 
@@ -94,55 +44,39 @@ export class WritingPadService extends TypertRemoteService {
   }
 
   async loadDraft(agent: Agent): Promise<{ text: string }> {
-    return { text: drafts.get(keyOf(agent.session.id)) ?? '' }
+    return { text: this.draftOf(agent) }
   }
 
-  async saveFile(
-    agent: Agent,
-    name: string,
-    text: string,
-  ): Promise<{ ok: boolean; error?: string; path?: string }> {
-    const fs = this.ctx.get('fs') as FsLike | undefined
-    if (fs === undefined) return { ok: false, error: 'filesystem unavailable' }
-    const fileName = name.trim() || 'draft.md'
-    if (!validName(fileName)) return { ok: false, error: 'file name must be a relative path without ".." or "\\"' }
-    try {
-      const target = await fs.resolve(fileName, { cwd: this.cwd })
-      await fs.writeText(target, text)
-      drafts.set(keyOf(agent.session.id), text)
-      return { ok: true, path: fileName }
-    } catch (err) {
-      return { ok: false, error: errorMessage(err) }
-    }
+  private draftOf(agent: Agent): string {
+    const key = keyOf(agent.session.id)
+    const buffered = drafts.get(key)
+    if (buffered !== undefined) return buffered
+    const restored = deriveDraftFromSession(agent.session.events)
+    drafts.set(key, restored)
+    return restored
   }
 
-  async loadFile(
-    agent: Agent,
-    name: string,
-  ): Promise<{ ok: boolean; error?: string; path?: string; text?: string }> {
-    const fs = this.ctx.get('fs') as FsLike | undefined
-    if (fs === undefined) return { ok: false, error: 'filesystem unavailable' }
-    const fileName = name.trim() || 'draft.md'
-    if (!validName(fileName)) return { ok: false, error: 'file name must be a relative path without ".." or "\\"' }
-    try {
-      const target = await fs.resolve(fileName, { cwd: this.cwd })
-      const text = await fs.readText(target)
-      drafts.set(keyOf(agent.session.id), text)
-      return { ok: true, path: fileName, text }
-    } catch (err) {
-      return { ok: false, error: errorMessage(err) }
-    }
+  private commitToolDraft(agent: Agent, text: string): { ok: boolean; error: string; draft: string } {
+    // Do not append a user/message here. The harness must append tool/result
+    // immediately after assistant(tool_calls); the successful call/result pair
+    // itself is enough to reconstruct this update after a restart.
+    drafts.set(keyOf(agent.session.id), text)
+    return { ok: true, error: '', draft: text }
   }
 
-  /** The writing_draft tool the agent calls in-session to read and rewrite the draft. */
+  /** The writing_draft tool is the model's explicit output destination. */
   private toolDefinition() {
     return defineTool({
       name: 'writing_draft',
       description:
-        '读写当前会话写作板的草稿。先调用 action=read 获取草稿全文；需要修改某部分时调用 action=rewrite，' +
-        '其中 old 必须与草稿中的原文逐字一致（含 Markdown 标记，建议从 read 的结果中复制），new 是要替换的新内容。',
+        '当前会话写作板的唯一模型写入出口。收到 <dsh-writing-pad-request operation="write"> 时，生成完整写作结果并调用 ' +
+        'action=write、content=完整正文；不要只在普通 assistant 回复中给出正文。收到 operation="rewrite" 时调用 action=rewrite，' +
+        'old 必须与当前草稿中的原文逐字一致（含 Markdown 标记），new 是替换内容；preview 选区可能不含 Markdown 标记，' +
+        '应先在当前草稿中定位对应源码再复制为 old。需要确认当前内容时调用 action=read。' +
+        'write/rewrite 成功后正文会自动出现在写作板；本次工具调用及结果会记录该修改，随后只需简短确认。',
       parameters: {
-        action: { type: 'string', enum: ['read', 'rewrite'], required: true, description: '操作类型' },
+        action: { type: 'string', enum: ['read', 'write', 'rewrite'], required: true, description: '操作类型' },
+        content: { type: 'string', description: 'write 时必填：要放入写作板的完整 Markdown 正文' },
         old: { type: 'string', description: 'rewrite 时必填：草稿中要替换的原文片段，必须逐字一致' },
         new: { type: 'string', description: 'rewrite 时必填：替换后的新内容' },
       },
@@ -152,39 +86,53 @@ export class WritingPadService extends TypertRemoteService {
           properties: { ok: { type: 'boolean' }, error: { type: 'string' }, draft: { type: 'string' } },
           additionalProperties: true,
         },
-        render(_args, value) {
+        render(args, value) {
           const v: Record<string, unknown> = value !== null && typeof value === 'object'
             ? value as Record<string, unknown>
             : {}
           const lines: string[] = []
-          if (typeof v.draft === 'string' && v.draft.length > 0) lines.push(v.draft)
+          const ok = v.ok === true
           if (typeof v.error === 'string' && v.error.length > 0) lines.push('错误：' + v.error)
+          if ((args.action === 'read' || !ok) && typeof v.draft === 'string') {
+            lines.push(v.draft.length > 0 ? v.draft : '(草稿为空)')
+          } else if (ok) {
+            lines.push('草稿已写入写作板。')
+          }
           if (lines.length === 0) lines.push('(无内容)')
           return [{ type: 'text', text: lines.join('\n') }]
         },
       },
-      async execute(args, exec) {
+      execute: async (args, exec) => {
         const a = args
-        const sessionId = exec.agent?.session.id
-        const key = keyOf(sessionId)
+        const agent = exec.agent
+        if (agent === undefined) {
+          return { ok: false, error: '当前没有可用会话', draft: '' }
+        }
         if (a.action === 'read') {
-          return { ok: true, error: '', draft: drafts.get(key) ?? '' }
+          return { ok: true, error: '', draft: this.draftOf(agent) }
+        }
+        if (a.action === 'write') {
+          if (typeof a.content !== 'string') {
+            return { ok: false, error: 'write 缺少 content 参数', draft: this.draftOf(agent) }
+          }
+          return this.commitToolDraft(agent, a.content)
         }
         if (a.action === 'rewrite') {
           const oldText = typeof a.old === 'string' ? a.old.trim() : ''
-          const newText = typeof a.new === 'string' ? a.new : ''
-          if (oldText.length === 0) return { ok: false, error: '缺少 old 参数', draft: '' }
-          const draft = drafts.get(key) ?? ''
-          const loc = locateInDraft(draft, oldText)
-          if (loc === null) {
+          if (oldText.length === 0 || typeof a.new !== 'string') {
+            return { ok: false, error: 'rewrite 缺少非空 old 或 new 参数', draft: this.draftOf(agent) }
+          }
+          const newText = a.new
+          const draft = this.draftOf(agent)
+          const rewritten = rewriteDraft(draft, oldText, newText)
+          if (!rewritten.matched) {
             return {
               ok: false,
               error: '草稿中找不到与 old 逐字一致的原文片段（old 必须与草稿完全一致，含 Markdown 标记）',
               draft,
             }
           }
-          drafts.set(key, draft.slice(0, loc.start) + newText + draft.slice(loc.end))
-          return { ok: true, error: '', draft: drafts.get(key) ?? '' }
+          return this.commitToolDraft(agent, rewritten.draft)
         }
         return { ok: false, error: '未知的 action: ' + String(a.action), draft: '' }
       },
@@ -199,7 +147,7 @@ interface RemoteDecoratorContext {
   addInitializer(initializer: RemoteInitializer): void
 }
 
-type RemoteMethodName = 'saveDraft' | 'loadDraft' | 'saveFile' | 'loadFile'
+type RemoteMethodName = 'saveDraft' | 'loadDraft'
 
 function registerRemoteMarker(name: RemoteMethodName): void {
   // Remote only consumes name/static/private/addInitializer at runtime. This
@@ -219,7 +167,7 @@ function registerRemoteMarker(name: RemoteMethodName): void {
   })
 }
 
-for (const name of ['saveDraft', 'loadDraft', 'saveFile', 'loadFile'] as const) {
+for (const name of ['saveDraft', 'loadDraft'] as const) {
   registerRemoteMarker(name)
 }
 

@@ -1,7 +1,7 @@
 {
   "name": "dsh-writing-pad",
-  "version": "0.1.0",
-  "description": "Session-scoped writing pad for the DeepSeek Harness web GUI: a right-details-column Markdown editor with preview, AI-assisted rewrite through the conversation, workspace file save/load, and the writing_draft agent tool.",
+  "version": "0.2.1",
+  "description": "Session-backed writing pad for the DeepSeek Harness web GUI with Markdown preview, complete-draft XML requests, human-readable transcript projections, and the writing_draft agent tool.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -22,7 +22,8 @@
   "scripts": {
     "build": "tsdown",
     "prepare": "pnpm build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.ts"
   },
   "dsh": {
     "bundle": { "patch": "./cordis.patch.yml" },
@@ -32,19 +33,25 @@
         "@deepseek-ai/dsh-client-runtime",
         "@deepseek-ai/dsh-api-remotes",
         "@deepseek-ai/dsh-client-ui-layout",
-        "@deepseek-ai/dsh-client-ui-conversation"
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-attachment",
+        "@deepseek-ai/dsh-client-ui-primitives"
       ]
     }
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=0.1.0-rc.5",
     "@deepseek-ai/dsh-agent": ">=0.1.0-rc.5",
+    "@deepseek-ai/dsh-llm": ">=0.1.0-rc.5",
+    "@deepseek-ai/dsh-session": ">=0.1.0-rc.5",
     "@deepseek-ai/dsh-tools": ">=0.1.0-rc.5",
     "@deepseek-ai/dsh-typert-protocol": ">=0.1.0-rc.5",
     "@deepseek-ai/dsh-client-runtime": ">=0.1.0-rc.5",
     "@deepseek-ai/dsh-api-remotes": ">=0.1.0-rc.5",
     "@deepseek-ai/dsh-client-ui-conversation": ">=0.1.0-rc.5",
+    "@deepseek-ai/dsh-client-ui-attachment": ">=0.1.0-rc.5",
     "@deepseek-ai/dsh-client-ui-layout": ">=0.1.0-rc.5",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.0-rc.5",
     "@deepseek-ai/dsh-client-ui-slots": ">=0.1.0-rc.5",
     "react": "^18.2.0"
   },

@@ -15,26 +15,10 @@ export interface LoadDraftResult {
   text: string
 }
 
-export interface SaveFileResult {
-  ok: boolean
-  error?: string
-  path?: string
-}
-
-export interface LoadFileResult extends SaveFileResult {
-  text?: string
-}
-
 const sessionIdSchema = z.string().min(1)
 const textSchema = z.string()
 const saveDraftResultSchema = z.object({ saved: z.boolean() })
 const loadDraftResultSchema = z.object({ text: z.string() })
-const saveFileResultSchema = z.object({
-  ok: z.boolean(),
-  error: z.string().optional(),
-  path: z.string().optional(),
-})
-const loadFileResultSchema = saveFileResultSchema.extend({ text: z.string().optional() })
 
 const agentParameter = {
   name: 'agent',
@@ -81,28 +65,18 @@ export const descriptors: readonly InvocationDescriptor[] = [
   descriptor('loadDraft', [agentParameter], {
     mode: 'strict', typeSymbol: 'dsh-writing-pad#LoadDraftResult', schema: loadDraftResultSchema,
   }),
-  descriptor('saveFile', [agentParameter, stringParameter('name'), stringParameter('text')], {
-    mode: 'strict', typeSymbol: 'dsh-writing-pad#SaveFileResult', schema: saveFileResultSchema,
-  }),
-  descriptor('loadFile', [agentParameter, stringParameter('name')], {
-    mode: 'strict', typeSymbol: 'dsh-writing-pad#LoadFileResult', schema: loadFileResultSchema,
-  }),
 ]
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteMap {
     'writingPad/saveDraft': (agentId: string, text: string) => Promise<RemoteResult<SaveDraftResult>>
     'writingPad/loadDraft': (agentId: string) => Promise<RemoteResult<LoadDraftResult>>
-    'writingPad/saveFile': (agentId: string, name: string, text: string) => Promise<RemoteResult<SaveFileResult>>
-    'writingPad/loadFile': (agentId: string, name: string) => Promise<RemoteResult<LoadFileResult>>
   }
 
   interface TypertRemoteNamespaceMap {
     writingPad: {
       saveDraft(agentId: string, text: string): Promise<RemoteResult<SaveDraftResult>>
       loadDraft(agentId: string): Promise<RemoteResult<LoadDraftResult>>
-      saveFile(agentId: string, name: string, text: string): Promise<RemoteResult<SaveFileResult>>
-      loadFile(agentId: string, name: string): Promise<RemoteResult<LoadFileResult>>
     }
   }
 }
