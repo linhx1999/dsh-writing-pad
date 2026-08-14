@@ -1,0 +1,9 @@
+# dsh-writing-pad bundle patch.
+#
+# One row mounts the package's Node entry (WritingPadService: the writingPad
+# Remote service and the writing_draft agent tool). The same package's
+# `dsh.client` manifest makes the web modules scanner serve `./client` to the
+# browser, so no separate client row is needed.
+- insert:
+    - id: writing-pad
+      name: dsh-writing-pad
