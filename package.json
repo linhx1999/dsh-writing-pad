@@ -16,7 +16,7 @@
     "dist",
     "cordis.patch.yml",
     "README.md",
-    "README.zh-CN.md",
+    "README.en.md",
     "LICENSE"
   ],
   "scripts": {
