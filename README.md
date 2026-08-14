@@ -25,9 +25,10 @@ dsh-writing-pad/
 ├── tsdown.config.ts      # self-contained build (runs from `prepare`)
 ├── src/
 │   ├── index.ts          # Host: WritingPadService (@Remote) + writing_draft tool
-│   ├── remote.ts         # generated Remote client binding (see bridge section)
+│   ├── remote.ts         # Remote descriptors, codecs, and client contribution
+│   ├── typert.ts         # Host Typert contribution loaded through ./typert
 │   └── client/
-│       ├── index.ts      # Client: slot registration, store, bridge wiring
+│       ├── index.tsx     # Client: slot registration, store, bridge wiring
 │       ├── WritingPad.tsx
 │       ├── WritingToggle.tsx
 │       ├── store.ts      # shared per-session state
@@ -58,7 +59,7 @@ allowBuilds:
 
 and re-run the `add`. Allow only source you trust, and pin a commit so a later
 push cannot silently change what runs. Alternatives without the allowance:
-publish to npm (prebuilt `lib/`) and run `dsh plugin add dsh-writing-pad`, or
+publish to npm (prebuilt `dist/`) and run `dsh plugin add dsh-writing-pad`, or
 ship a tarball from `pnpm pack`.
 
 Verify without booting, then boot:
@@ -72,25 +73,53 @@ dsh --profile web
 
 ```sh
 pnpm install
-pnpm build          # tsdown → lib/index.js + lib/client.js
+pnpm build          # tsdown → dist/index.js + dist/client.js + Remote artifacts
 pnpm typecheck      # tsc --noEmit (needs dev dependencies installed)
 ```
 
 `prepare` runs `pnpm build` automatically after a git install.
 
+### Dependency release-age policy
+
+This checkout keeps pnpm's release-age protection enabled. The exact Harness
+RC versions intentionally accepted for this build are listed under `minimumReleaseAgeExclude`
+in `pnpm-workspace.yaml`; every other package remains subject to the normal
+minimum-age check. When updating Harness dependencies, inspect the lockfile
+changes before accepting additional exact exclusions. Do not disable the
+policy globally just to make an install pass.
+
+## Package and publish
+
+First update `version` in `package.json`; a registry version cannot be
+republished. Then verify the package and choose either a tarball or npm:
+
+```sh
+pnpm typecheck
+pnpm build
+
+# Portable prebuilt tarball; no install-time build permission is required.
+pnpm pack
+dsh plugin --profile web add ./dsh-writing-pad-0.1.0.tgz
+
+# npm registry release; authenticate first with npm login.
+pnpm publish --dry-run
+pnpm publish --access public
+dsh plugin --profile web add dsh-writing-pad@0.1.0
+```
+
+`files` limits both release forms to `dist/`, the bundle patch, documentation,
+license, and package manifest. Inspect the tarball before distributing it with
+`pnpm pack --dry-run`.
+
 ## Client→Host bridge
 
-The client calls the host through a typert **Remote** service
-(`WritingPadService`, `@Remote` methods). The generated client binding
-(`ctx.remote.writingPad`) is produced by the typert generator and mounted with
-`ctx.remote.$mount(contribution)`, following the pattern in
-`@deepseek-ai/dsh-api-remotes/client`. Until the generator runs, `src/remote.ts`
-carries the interface the client casts to; keep it in sync with the `@Remote`
-signatures.
-
-If you prefer to avoid generation, an alternative is to contribute the service
-to the `dsh-api-remotes` allowlist in the harness repo (a one-line assembly
-change per remote namespace).
+The client calls the host through the typert **Remote** service
+`WritingPadService`. `src/remote.ts` contains strict wire codecs and the
+`TYPERT_REMOTE` client contribution; `src/typert.ts` exposes the same
+descriptors as the Host `TYPERT` contribution. The Harness loader discovers
+`./typert`, while the browser module mounts `./remote` with
+`ctx.remote.$mount(contribution)`. This keeps the plugin self-contained and
+requires no change to the Harness `dsh-api-remotes` allowlist.
 
 ## Porting notes (from the dynamic-plugin prototype)
 
@@ -117,8 +146,6 @@ plugin occupies it.
 - Decide whether drafts should be file-backed (write the `.md` file on every
   autosave and poll the file instead of Host memory) so agent-side file edits
   also sync into the pad automatically.
-- Run the typert generator for `./remote` (or add the allowlist entry) to
-  remove the `src/remote.ts` placeholder cast.
 
 ## License
 

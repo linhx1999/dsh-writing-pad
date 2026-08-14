@@ -1,6 +1,7 @@
 /** The writing pad: Markdown editor, preview, AI rewrite request, file ops. */
 
 import { useEffect, useRef, useState } from 'react'
+import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { renderMarkdown } from './markdown.ts'
 import type { WritingPadStore } from './store.ts'
 import './writing-pad.css'
@@ -12,22 +13,23 @@ export interface WritingPadBridge {
   loadFile(sessionId: string, name: string): Promise<{ ok: boolean; error?: string; path?: string; text?: string }>
 }
 
-export interface WritingPadProps {
-  sessionId: string
+export type WritingPadProps = PropsRuntime<'details'> & {
   store: WritingPadStore
   bridge: WritingPadBridge
-  schedule(cb: () => void, ms: number): () => void
   onClose(sessionId: string): void
-  inputActions?: { setDraft(text: string): void; submit(): void }
 }
 
 const STATUS_TEXT: Record<string, string> = { idle: '', saving: '保存中…', saved: '已保存', error: '保存失败' }
 
 export function WritingPad(props: WritingPadProps) {
-  const { sessionId: sid, store, bridge, schedule, onClose } = props
+  const { sessionId: sid, store, bridge, onClose } = props
   const [entry, setEntry] = useState(() => store.entryOf(sid))
   useEffect(() => store.subscribe(() => setEntry(store.entryOf(sid))), [store, sid])
-  const saveTimer = useRef<(() => void) | null>(null)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => () => {
+    if (saveTimer.current !== null) clearTimeout(saveTimer.current)
+  }, [])
 
   // Restore the session draft on first open (after a page refresh the host
   // memory is the source of truth).
@@ -41,7 +43,7 @@ export function WritingPad(props: WritingPadProps) {
   // Poll the host draft so agent-side writing_draft rewrites appear
   // automatically. Skip while the user is typing (status saving).
   useEffect(() => {
-    const stop = schedule(() => {
+    const timer = setInterval(() => {
       if (store.entryOf(sid).status === 'saving') return
       bridge.loadDraft(sid).then((res) => {
         const cur = store.entryOf(sid)
@@ -51,13 +53,14 @@ export function WritingPad(props: WritingPadProps) {
         }
       }).catch(() => {})
     }, 2000)
-    return () => stop()
-  }, [sid, store, bridge, schedule])
+    return () => clearInterval(timer)
+  }, [sid, store, bridge])
 
   const handleDraftChange = (text: string): void => {
     store.setEntry(sid, { draft: text, status: 'saving' })
-    if (saveTimer.current) saveTimer.current()
-    saveTimer.current = schedule(() => {
+    if (saveTimer.current !== null) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      saveTimer.current = null
       bridge.saveDraft(sid, text).then(() => store.setEntry(sid, { status: 'saved' }))
         .catch(() => store.setEntry(sid, { status: 'error' }))
     }, 800)
@@ -119,8 +122,8 @@ export function WritingPad(props: WritingPadProps) {
     store.setEntry(sid, { fileStatus: '改写请求已发送到对话，完成后点「同步」拉取草稿', previewSel: '', rewriteNote: '' })
   }
 
-  const trackSelection = (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
-    store.setEntry(sid, { selStart: e.target.selectionStart, selEnd: e.target.selectionEnd })
+  const trackSelection = (e: React.SyntheticEvent<HTMLTextAreaElement>): void => {
+    store.setEntry(sid, { selStart: e.currentTarget.selectionStart, selEnd: e.currentTarget.selectionEnd })
   }
 
   const chars = entry.draft.replace(/\s+/g, '').length

@@ -2,8 +2,8 @@
  * Host half of dsh-writing-pad: the writingPad Remote service (draft and
  * workspace-file operations for the client) and the writing_draft agent tool.
  *
- * The service is a TypertRemoteService; its `./remote` client binding is
- * produced by the typert generator (see README, "Client→Host bridge").
+ * The service is a TypertRemoteService; `./remote` and `./typert` carry the
+ * matching wire contribution (see README, "Client→Host bridge").
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -25,6 +25,10 @@ const DEFAULT_KEY = '__default__'
 
 function keyOf(sessionId: string | undefined): string {
   return typeof sessionId === 'string' && sessionId.length > 0 ? sessionId : DEFAULT_KEY
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function validName(name: string): boolean {
@@ -61,6 +65,9 @@ function locateInDraft(draft: string, oldText: string): { start: number; end: nu
   return { start: map[n]!, end: map[n + len - 1]! + 1 }
 }
 
+type RemoteInitializer = (this: WritingPadService) => void
+const remoteInitializers: RemoteInitializer[] = []
+
 /** Host API for the writing pad client, mounted into `ctx.remote.writingPad`. */
 export class WritingPadService extends TypertRemoteService {
   static inject = ['agents', 'tools']
@@ -69,6 +76,11 @@ export class WritingPadService extends TypertRemoteService {
 
   constructor(ctx: Context) {
     super(ctx, 'writingPad')
+    // The published dependency exposes standard (stage-3) decorators, while
+    // this standalone tsdown build intentionally avoids a separate tsc emit
+    // pass. Run the decorator initializers registered below explicitly so the
+    // output is ordinary JavaScript on every supported Node release.
+    for (const initialize of remoteInitializers) initialize.call(this)
     const sandboxPolicy = ctx.get('sandboxPolicy')
     this.cwd = sandboxPolicy !== undefined && typeof sandboxPolicy.workspaceRoot === 'string'
       ? sandboxPolicy.workspaceRoot
@@ -76,21 +88,17 @@ export class WritingPadService extends TypertRemoteService {
     ctx.effect(() => ctx.tools.register(this.toolDefinition()))
   }
 
-  @Remote('saveDraft')
-  async saveDraft(agent: Agent, sessionId: string, text: string): Promise<{ saved: boolean }> {
-    drafts.set(keyOf(sessionId), text)
+  async saveDraft(agent: Agent, text: string): Promise<{ saved: boolean }> {
+    drafts.set(keyOf(agent.session.id), text)
     return { saved: true }
   }
 
-  @Remote('loadDraft')
-  async loadDraft(agent: Agent, sessionId: string): Promise<{ text: string }> {
-    return { text: drafts.get(keyOf(sessionId)) ?? '' }
+  async loadDraft(agent: Agent): Promise<{ text: string }> {
+    return { text: drafts.get(keyOf(agent.session.id)) ?? '' }
   }
 
-  @Remote('saveFile')
   async saveFile(
     agent: Agent,
-    sessionId: string,
     name: string,
     text: string,
   ): Promise<{ ok: boolean; error?: string; path?: string }> {
@@ -101,17 +109,15 @@ export class WritingPadService extends TypertRemoteService {
     try {
       const target = await fs.resolve(fileName, { cwd: this.cwd })
       await fs.writeText(target, text)
-      drafts.set(keyOf(sessionId), text)
+      drafts.set(keyOf(agent.session.id), text)
       return { ok: true, path: fileName }
     } catch (err) {
-      return { ok: false, error: String((err && err.message) || err) }
+      return { ok: false, error: errorMessage(err) }
     }
   }
 
-  @Remote('loadFile')
   async loadFile(
     agent: Agent,
-    sessionId: string,
     name: string,
   ): Promise<{ ok: boolean; error?: string; path?: string; text?: string }> {
     const fs = this.ctx.get('fs') as FsLike | undefined
@@ -121,10 +127,10 @@ export class WritingPadService extends TypertRemoteService {
     try {
       const target = await fs.resolve(fileName, { cwd: this.cwd })
       const text = await fs.readText(target)
-      drafts.set(keyOf(sessionId), text)
+      drafts.set(keyOf(agent.session.id), text)
       return { ok: true, path: fileName, text }
     } catch (err) {
-      return { ok: false, error: String((err && err.message) || err) }
+      return { ok: false, error: errorMessage(err) }
     }
   }
 
@@ -147,7 +153,9 @@ export class WritingPadService extends TypertRemoteService {
           additionalProperties: true,
         },
         render(_args, value) {
-          const v = value !== null && typeof value === 'object' ? value : {}
+          const v: Record<string, unknown> = value !== null && typeof value === 'object'
+            ? value as Record<string, unknown>
+            : {}
           const lines: string[] = []
           if (typeof v.draft === 'string' && v.draft.length > 0) lines.push(v.draft)
           if (typeof v.error === 'string' && v.error.length > 0) lines.push('错误：' + v.error)
@@ -156,31 +164,63 @@ export class WritingPadService extends TypertRemoteService {
         },
       },
       async execute(args, exec) {
-        const a = args !== null && typeof args === 'object' ? args : {}
+        const a = args
         const sessionId = exec.agent?.session.id
         const key = keyOf(sessionId)
         if (a.action === 'read') {
-          return { ok: true, draft: drafts.get(key) ?? '' }
+          return { ok: true, error: '', draft: drafts.get(key) ?? '' }
         }
         if (a.action === 'rewrite') {
           const oldText = typeof a.old === 'string' ? a.old.trim() : ''
           const newText = typeof a.new === 'string' ? a.new : ''
-          if (oldText.length === 0) return { ok: false, error: '缺少 old 参数' }
+          if (oldText.length === 0) return { ok: false, error: '缺少 old 参数', draft: '' }
           const draft = drafts.get(key) ?? ''
           const loc = locateInDraft(draft, oldText)
           if (loc === null) {
             return {
               ok: false,
               error: '草稿中找不到与 old 逐字一致的原文片段（old 必须与草稿完全一致，含 Markdown 标记）',
+              draft,
             }
           }
           drafts.set(key, draft.slice(0, loc.start) + newText + draft.slice(loc.end))
-          return { ok: true, draft: drafts.get(key) ?? '' }
+          return { ok: true, error: '', draft: drafts.get(key) ?? '' }
         }
-        return { ok: false, error: '未知的 action: ' + String(a.action) }
+        return { ok: false, error: '未知的 action: ' + String(a.action), draft: '' }
       },
     })
   }
+}
+
+interface RemoteDecoratorContext {
+  readonly name: string
+  readonly static: false
+  readonly private: false
+  addInitializer(initializer: RemoteInitializer): void
+}
+
+type RemoteMethodName = 'saveDraft' | 'loadDraft' | 'saveFile' | 'loadFile'
+
+function registerRemoteMarker(name: RemoteMethodName): void {
+  // Remote only consumes name/static/private/addInitializer at runtime. This
+  // small adapter reproduces the standard decorator call without shipping
+  // syntax that Node cannot parse yet.
+  const decorate = Remote(name) as unknown as (
+    method: unknown,
+    context: RemoteDecoratorContext,
+  ) => void
+  decorate(WritingPadService.prototype[name], {
+    name,
+    static: false,
+    private: false,
+    addInitializer(initializer) {
+      remoteInitializers.push(initializer)
+    },
+  })
+}
+
+for (const name of ['saveDraft', 'loadDraft', 'saveFile', 'loadFile'] as const) {
+  registerRemoteMarker(name)
 }
 
 export default WritingPadService

@@ -1,10 +1,10 @@
 /** Header action that opens and closes the writing pad column. */
 
 import { useEffect, useState } from 'react'
+import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WritingPadStore } from './store.ts'
 
-export interface WritingToggleProps {
-  sessionId: string
+export type WritingToggleProps = PropsRuntime<'conversation.session.header.actions'> & {
   store: WritingPadStore
   onToggle(sessionId: string): void
 }
