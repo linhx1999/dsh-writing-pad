@@ -420,13 +420,6 @@ export function WritingPad(props: WritingPadProps) {
 
       {entry.review !== null ? (
         <div className="dsw-writing-pad-review">
-          <div className="dsw-writing-pad-review-bar">
-            <div className="dsw-writing-pad-diff-legend"><span className="is-add">新增</span><span className="is-delete">删除</span></div>
-            <div className="dsw-writing-pad-review-actions">
-              <button type="button" disabled={busy} className="dsw-writing-pad-review-reject" onClick={() => void applyReviewDecision('reject')}>拒绝修改</button>
-              <button type="button" disabled={busy} className="dsw-writing-pad-review-accept" onClick={() => void applyReviewDecision('accept')}>接受修改</button>
-            </div>
-          </div>
           <div className="dsw-writing-pad-preview" dangerouslySetInnerHTML={{ __html: renderMarkdownDiff(entry.review.before, entry.review.after) }} />
         </div>
       ) : entry.mode === 'preview' ? (
@@ -509,18 +502,27 @@ export function WritingPad(props: WritingPadProps) {
               >{entry.feedback.text}</span>
             )}
           </div>
-          <div className="dsw-writing-pad-default-actions">
-            <button type="button" disabled={busy || entry.rewriteNote.trim() === '' || entry.rewriteNote.trim() === store.defaultRewriteNote()} onClick={handleSaveDefault}>设为默认</button>
-            {store.defaultRewriteNote() !== '' && <button type="button" disabled={busy} onClick={handleClearDefault}>清除默认</button>}
-          </div>
-          <button
-            type="button"
-            className={`dsw-writing-pad-ai-btn${hasRewriteNote ? '' : ' is-empty'}`}
-            disabled={busy || !isRewrite}
-            onClick={() => void handleWritingRequest()}
-          >
-            {busy ? '处理中…' : '发送'}
-          </button>
+          {entry.review !== null ? (
+            <div className="dsw-writing-pad-review-actions">
+              <button type="button" disabled={busy} className="dsw-writing-pad-review-reject" onClick={() => void applyReviewDecision('reject')}>拒绝修改</button>
+              <button type="button" disabled={busy} className="dsw-writing-pad-review-accept" onClick={() => void applyReviewDecision('accept')}>接受修改</button>
+            </div>
+          ) : (
+            <>
+              <div className="dsw-writing-pad-default-actions">
+                <button type="button" disabled={busy || entry.rewriteNote.trim() === '' || entry.rewriteNote.trim() === store.defaultRewriteNote()} onClick={handleSaveDefault}>设为默认</button>
+                {store.defaultRewriteNote() !== '' && <button type="button" disabled={busy} onClick={handleClearDefault}>清除默认</button>}
+              </div>
+              <button
+                type="button"
+                className={`dsw-writing-pad-ai-btn${hasRewriteNote ? '' : ' is-empty'}`}
+                disabled={busy || !isRewrite}
+                onClick={() => void handleWritingRequest()}
+              >
+                {busy ? '处理中…' : '发送'}
+              </button>
+            </>
+          )}
         </div>
         <div className="dsw-writing-pad-foot">
           <span>{chars} 字 · {words} 词</span>
