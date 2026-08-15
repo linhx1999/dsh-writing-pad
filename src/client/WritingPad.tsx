@@ -33,11 +33,11 @@ export type WritingPadProps = PropsRuntime<'details'> & {
 }
 
 const DEFAULT_REWRITE_INSTRUCTION = '保持原意，改善表达，使文字更清晰流畅。'
-const MIN_TOOLS_HEIGHT = 190
+const MIN_TOOLS_HEIGHT = 160
 const MAX_TOOLS_HEIGHT = 420
 const MIN_NOTE_HEIGHT = 54
-const MAX_NOTE_HEIGHT = 284
-const INITIAL_PANEL_HEIGHTS: PanelHeights = { tools: 190, note: 54 }
+const MAX_NOTE_HEIGHT = 314
+const INITIAL_PANEL_HEIGHTS: PanelHeights = { tools: 160, note: 54 }
 
 export function WritingPad(props: WritingPadProps) {
   const { sessionId: sid, store, bridge, onClose } = props

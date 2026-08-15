@@ -233,7 +233,7 @@
   flex-direction: column;
   background: var(--dsw-alias-bg-module-platform, #f5f6f7);
   border-top: 1px solid var(--dsw-alias-border-l1, rgba(127, 127, 127, 0.3));
-  min-height: 190px;
+  min-height: 160px;
   max-height: 70%;
   overflow-y: auto;
   padding: 11px 0 max(12px, env(safe-area-inset-bottom));
@@ -316,7 +316,7 @@
 .dsw-writing-pad-note-editor {
   position: relative;
   min-height: 54px;
-  max-height: 284px;
+  max-height: 314px;
   margin: 8px 14px 0;
   overflow: hidden;
   flex: none;
