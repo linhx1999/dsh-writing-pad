@@ -15,6 +15,7 @@
   "files": [
     "dist",
     "cordis.patch.yml",
+    "docs/assets",
     "README.md",
     "README.en.md",
     "LICENSE"
