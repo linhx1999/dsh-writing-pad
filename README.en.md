@@ -57,29 +57,13 @@ dsh-writing-pad/
 
 ## Install
 
-Requires the `dsh` CLI (`dsh --profile web` boots the web GUI). From a GitHub
-host:
+Install the `dsh` CLI first, then add the stable release to the web profile:
 
 ```sh
-dsh plugin --profile web add github:you/dsh-writing-pad#<commit>
+dsh plugin --profile web add dsh-writing-pad@1.0.0
 ```
 
-A git install fetches sources, so the package's `prepare` script (tsdown) must
-build the entry points. pnpm ≥ 10 refuses to run a git dependency's `prepare`
-until it is explicitly allowed: the first `add` fails and `dsh` prints the
-exact package key — copy it into the profile's `pnpm-workspace.yaml`:
-
-```yaml
-allowBuilds:
-  dsh-writing-pad: true
-```
-
-and re-run the `add`. Allow only source you trust, and pin a commit so a later
-push cannot silently change what runs. Alternatives without the allowance:
-publish to npm (prebuilt `dist/`) and run `dsh plugin add dsh-writing-pad`, or
-ship a tarball from `pnpm pack`.
-
-Verify without booting, then boot:
+Inspect the plugin layer, then boot the web GUI:
 
 ```sh
 dsh --profile web --dump-config   # shows a "# == dsh-writing-pad" layer
@@ -93,49 +77,6 @@ Remove the plugin from the web profile:
 ```sh
 dsh plugin --profile web remove dsh-writing-pad
 ```
-
-## Build
-
-```sh
-pnpm install
-pnpm build          # tsdown → dist/index.js + dist/client.js + Remote artifacts
-pnpm typecheck      # tsc --noEmit (needs dev dependencies installed)
-pnpm test           # XML codec and session-recovery tests
-```
-
-`prepare` runs `pnpm build` automatically after a git install.
-
-### Dependency release-age policy
-
-This checkout keeps pnpm's release-age protection enabled. The exact Harness
-RC versions intentionally accepted for this build are listed under `minimumReleaseAgeExclude`
-in `pnpm-workspace.yaml`; every other package remains subject to the normal
-minimum-age check. When updating Harness dependencies, inspect the lockfile
-changes before accepting additional exact exclusions. Do not disable the
-policy globally just to make an install pass.
-
-## Package and publish
-
-First update `version` in `package.json`; a registry version cannot be
-republished. Then verify the package and choose either a tarball or npm:
-
-```sh
-pnpm typecheck
-pnpm build
-
-# Portable prebuilt tarball; no install-time build permission is required.
-pnpm pack
-dsh plugin --profile web add ./dsh-writing-pad-0.2.1.tgz
-
-# npm registry release; authenticate first with npm login.
-pnpm publish --dry-run
-pnpm publish --access public
-dsh plugin --profile web add dsh-writing-pad@0.2.1
-```
-
-`files` limits both release forms to `dist/`, the bundle patch, documentation,
-license, and package manifest. Inspect the tarball before distributing it with
-`pnpm pack --dry-run`.
 
 ## Client→Host bridge
 

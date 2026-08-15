@@ -1,6 +1,6 @@
 {
   "name": "dsh-writing-pad",
-  "version": "0.2.1",
+  "version": "1.0.0",
   "description": "Session-backed writing pad for the DeepSeek Harness web GUI with Markdown preview, complete-draft XML requests, human-readable transcript projections, and the writing_draft agent tool.",
   "type": "module",
   "main": "dist/index.js",
