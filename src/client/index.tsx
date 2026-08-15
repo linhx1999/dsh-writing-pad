@@ -6,6 +6,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import writingPadRemote from '../remote.ts'
+import { BlankDetailsLayoutBridge } from './BlankDetailsLayoutBridge.tsx'
 import { createWritingPadStore, type WritingPadStore } from './store.ts'
 import { WritingPad, type WritingPadBridge } from './WritingPad.tsx'
 import { WritingRequestMessage } from './WritingRequestMessage.tsx'
@@ -63,8 +64,21 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     { name: 'details', priority: -10 },
     (props) => <WritingPad store={store} bridge={bridge} onClose={close} {...props} />,
   ))
-  ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register(
-    { name: 'conversation.session.header.actions', id: 'writing-pad-toggle', order: 30 },
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register(
+    // ui-layout mounts details for blank sessions but forces its grid track to
+    // zero. The bridge restores that real track instead of duplicating the pad
+    // as a floating overlay, then withdraws after the first prompt.
+    {
+      name: 'shell.overlay',
+      id: 'writing-pad-blank-layout',
+      order: 30,
+    },
+    (props) => <BlankDetailsLayoutBridge store={store} {...props} />,
+  ))
+  ctx.slots.inject('conversation.input.left', () => ctx.slots.register(
+    // The input-left seat is the composer's one-row tool area. Keeping this
+    // control here makes the writing surface available where requests begin.
+    { name: 'conversation.input.left', id: 'writing-pad-toggle', order: 30 },
     (props) => <WritingToggle store={store} onToggle={toggle} {...props} />,
   ))
   for (const key of ['user', 'steering'] as const) {

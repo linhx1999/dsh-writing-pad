@@ -4,11 +4,12 @@
 
 面向 DeepSeek Harness Web 界面的会话级写作板。它在 `details` 槽位中挂载一个右侧栏 Markdown 编辑器，功能包括：
 
-- Markdown 编辑与内置预览（编辑/预览切换）。
-- AI 生成与改写：未选中文字时输入要求可生成或替换全文；选中文字时改写该片段。每条写作请求都把当前完整草稿放进同一条版本化 XML user 消息，模型通过 `writing_draft` 把结果明确写回写作板。
+- 输入框工具行内提供带图标和“写作板”文字的开关，可展开右侧 Markdown 编辑器并切换编辑/预览模式；新建会话在发送首条消息前也可打开，发送后会自动交接到标准侧栏。
+- AI 局部改写：在编辑或预览模式中选中文字，再输入可选的额外要求并发送改写请求。未选中内容时不能发送，界面不提供全文生成功能。每条改写请求都把当前完整草稿放进同一条版本化 XML user 消息，模型通过 `writing_draft` 把结果明确写回写作板。
 - 对话区不会显示模型所需的完整 XML：写作请求气泡只呈现“修改内容”（有选区时）和“额外要求”，复制操作也只复制这份可见摘要。普通 user/steering 消息仍按原有气泡能力呈现。
 - `writing_draft` agent 工具提供 `read`、`write` 和 `rewrite`：`write` 接收完整 Markdown 正文，`rewrite` 使用逐字匹配的 `old` + `new` 局部替换。
 - 草稿按会话隔离，编辑时防抖暂存在 Host 内存；发送新写作请求时，完整草稿随该条 user 消息持久化。模型写回由成功的 `writing_draft` 工具调用/结果记录，重启后可将两类记录折叠还原。草稿不会写入工作区文件。
+- 每个会话保留最多 50 步撤销历史；连续输入在同一次暂存窗口内合并为一步，清空和模型写回也可以撤销。
 
 ## 仓库结构
 
@@ -26,8 +27,10 @@ dsh-writing-pad/
 │   └── client/
 │       ├── index.tsx     # Client：槽位注册、store、桥接装配
 │       ├── WritingPad.tsx
+│       ├── BlankDetailsLayoutBridge.tsx # 空白会话 details 布局桥接
 │       ├── WritingRequestMessage.tsx # 隐藏 XML 的 user 消息呈现投影
 │       ├── WritingToggle.tsx
+│       ├── blank-session.ts # 当前空白会话选择器
 │       ├── store.ts      # 按会话共享的状态
 │       ├── markdown.ts   # 极简 Markdown 渲染器
 │       └── writing-pad.css
@@ -57,6 +60,14 @@ allowBuilds:
 ```sh
 dsh --profile web --dump-config   # 会显示 "# == dsh-writing-pad" 层
 dsh --profile web
+```
+
+## 卸载
+
+从 Web profile 中移除插件：
+
+```sh
+dsh plugin --profile web remove dsh-writing-pad
 ```
 
 ## 构建
@@ -100,15 +111,15 @@ Client 通过 typert **Remote** 服务 `WritingPadService` 调用 Host。`src/re
 
 Remote interface 只有两个草稿操作：`saveDraft` 做低成本 Host 内存暂存，`loadDraft` 优先读取内存；进程重启后则从会话日志还原。插件不提供独立的 `checkpointDraft`，也不会在工具执行期间插入合成 user 消息。
 
-持久化边界就是正常对话边界：用户点击“生成全文”或“发送改写请求”时，插件只提交一条真实的 `<dsh-writing-pad-request>` user 消息，其中同时包含完整 `<draft>`、要求和可选选区。LLM 随后的 `assistant(tool_calls)` 必须直接跟对应 `tool/result`；`writing_draft` 因此只更新 Host 内存，不追加消息。恢复时，插件按顺序折叠最近的请求草稿以及成功的原生/Code Mode `writing_draft` 操作。
+持久化边界就是正常对话边界：用户选中文字并点击“发送改写请求”时，插件只提交一条真实的 `<dsh-writing-pad-request>` user 消息，其中同时包含完整 `<draft>`、要求和选区。LLM 随后的 `assistant(tool_calls)` 必须直接跟对应 `tool/result`；`writing_draft` 因此只更新 Host 内存，不追加消息。恢复时，插件按顺序折叠最近的请求草稿以及成功的原生/Code Mode `writing_draft` 操作。
 
 ## 模型输出流
 
-写作板发出的单条 `<dsh-writing-pad-request>` 包含当前完整 `<draft>`、`operation=write|rewrite`、自然语言要求和可选选区，并声明目标工具 `writing_draft`。模型生成的正文不依赖普通 assistant 文本解析：完整生成结果通过 `action=write, content=...` 写入，局部修改通过 `action=rewrite, old=..., new=...` 写入。工具成功后只更新 Host 内存；工具调用和结果本身已经是可恢复记录，Client 在下一次同步轮询中显示结果，assistant 只需做简短确认。
+写作板发出的单条 `<dsh-writing-pad-request>` 包含当前完整 `<draft>`、`operation=rewrite`、自然语言要求和选区，并声明目标工具 `writing_draft`。模型通过 `action=rewrite, old=..., new=...` 写入局部修改，不依赖普通 assistant 文本解析。Host 工具仍保留 `action=write` 供直接调用和历史兼容，但写作板界面不提供全文生成入口。工具成功后只更新 Host 内存；调用/结果本身已经是可恢复记录，Client 通过后台轮询接收结果，assistant 只需做简短确认。
 
 模型侧和持久会话仍接收上述 XML 原文。Client 以较低优先级覆盖 `conversation.chat.node` 的 `user`/`steering` 呈现槽位，只对能解析为受支持写作请求的消息生成摘要；XML 中的完整 `<draft>` 不进入气泡。无法识别的消息走同一组件的普通文本、图片和附加块呈现，不会被误判为写作请求。
 
-尚未随新写作请求发送的手工编辑只存在于当前 Host 进程内；关闭侧栏不会制造一条 user 消息。需要把最新手工修改纳入可恢复会话历史时，发送下一条写作请求即可。
+尚未随新改写请求发送的手工编辑只存在于当前 Host 进程内；关闭侧栏不会制造一条 user 消息。需要把最新手工修改纳入可恢复会话历史时，发送下一条改写请求即可。
 
 ## 移植说明（来自动态插件原型）
 
@@ -121,7 +132,7 @@ Remote interface 只有两个草稿操作：`saveDraft` 做低成本 Host 内存
 | 动态 Client 内置（`React`、`host`、`styles`） | 常规导入（`react`、`ctx.slots.register`、CSS） |
 | 草稿存在 Host 内存中、按会话隔离 | 内存暂存 + user 请求内完整 XML 草稿 + 工具结果折叠恢复 |
 
-本插件占用 `details` 列期间会替换自带的工具详情面板。普通 assistant 回复不会自动覆盖草稿；只有 `writing_draft` 工具调用才是模型写入出口，避免把解释文字误当作正文。
+本插件始终占用真正的 `details` 列并替换自带的工具详情面板。Harness 会将空白会话的该列宽度强制为零，因此插件通过一个 `shell.overlay` 布局桥接恢复原列宽，而不会渲染悬浮副本；首条消息发送后桥接退出，由标准布局继续管理侧栏。普通 assistant 回复不会自动覆盖草稿；只有 `writing_draft` 工具调用才是模型写入出口，避免把解释文字误当作正文。
 
 ## 待办事项
 

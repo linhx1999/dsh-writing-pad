@@ -4,10 +4,24 @@
   flex-direction: column;
   box-sizing: border-box;
   background: var(--dsw-alias-bg-overlay, #ffffff);
-  border-left: 1px solid var(--dsw-alias-border-l1, rgba(127, 127, 127, 0.3));
   color: var(--dsw-alias-label-primary, #1f2328);
   font-family: inherit;
   font-size: 14px;
+}
+.dsw-writing-pad-layout-bridge { display: none; }
+
+/* ui-layout keeps the real details subtree mounted for blank sessions but
+   resolves its third track to zero. While the bridge marker is active, retain
+   ui-layout's intended sidebar width and give that existing third track the
+   same responsive 300–360px concession used by an active conversation. */
+[data-dsw-writing-pad-blank-details] {
+  grid-template-columns:
+    var(--dsw-writing-pad-sidebar-width)
+    minmax(0, 1fr)
+    var(--dsw-writing-pad-details-width) !important;
+}
+[data-dsw-writing-pad-blank-details] > :nth-child(3) {
+  border-left: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.3)) !important;
 }
 .dsw-writing-pad-head {
   display: flex;
@@ -142,8 +156,8 @@
 }
 .dsw-writing-pad-ai-btn:disabled,
 .dsw-writing-pad-close:disabled,
-.dsw-writing-pad-clear:disabled,
-.dsw-writing-pad-checkpoint-btn:disabled {
+.dsw-writing-pad-undo:disabled,
+.dsw-writing-pad-clear:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
@@ -165,30 +179,6 @@
   font-size: 12px;
 }
 .dsw-writing-pad-note-input::placeholder { color: var(--dsw-alias-label-secondary, #656d76); }
-.dsw-writing-pad-checkpoint {
-  display: flex;
-  gap: 6px;
-  padding: 6px 14px 0;
-  flex: none;
-  align-items: center;
-}
-.dsw-writing-pad-checkpoint-hint {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  color: var(--dsw-alias-label-secondary, #656d76);
-}
-.dsw-writing-pad-checkpoint-btn {
-  border: 1px solid var(--dsw-alias-border-l1, rgba(127, 127, 127, 0.3));
-  background: var(--dsw-alias-bg-overlay, #ffffff);
-  color: var(--dsw-alias-label-secondary, #656d76);
-  border-radius: 4px;
-  padding: 4px 10px;
-  cursor: pointer;
-  font-size: 12px;
-  flex: none;
-}
-.dsw-writing-pad-checkpoint-btn:hover { color: var(--dsw-alias-label-primary, #1f2328); }
 .dsw-writing-pad-notice {
   padding: 4px 14px 0;
   font-size: 12px;
@@ -204,8 +194,14 @@
   font-size: 12px;
   color: var(--dsw-alias-label-secondary, #656d76);
 }
-.dsw-writing-pad-clear {
+.dsw-writing-pad-foot-actions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dsw-writing-pad-undo,
+.dsw-writing-pad-clear {
   border: 1px solid var(--dsw-alias-border-l1, rgba(127, 127, 127, 0.3));
   background: var(--dsw-alias-bg-overlay, #ffffff);
   color: var(--dsw-alias-label-secondary, #656d76);
@@ -214,20 +210,42 @@
   cursor: pointer;
   font-size: 12px;
 }
-.dsw-writing-toggle {
-  border: 1px solid var(--dsw-alias-border-l1, rgba(127, 127, 127, 0.3));
-  background: transparent;
-  color: var(--dsw-alias-label-secondary, #656d76);
-  border-radius: 6px;
-  padding: 4px 10px;
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1.4;
+.dsw-writing-pad-undo:hover:not(:disabled),
+.dsw-writing-pad-clear:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary, #1f2328);
+  border-color: var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.45));
 }
-.dsw-writing-toggle:hover { color: var(--dsw-alias-label-primary, #1f2328); }
+.dsw-writing-toggle {
+  height: 28px;
+  padding: 0 9px;
+  border: 0;
+  background: var(--dsw-specific-selector, transparent);
+  color: var(--dsw-alias-label-secondary, #656d76);
+  border-radius: 8px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  white-space: nowrap;
+  transition: color 100ms ease, background-color 100ms ease;
+}
+.dsw-writing-toggle svg { flex: none; }
+.dsw-writing-toggle:hover {
+  color: var(--dsw-alias-label-primary, #1f2328);
+  background: var(--dsw-alias-interactive-bg-hover-solid, rgba(127, 127, 127, 0.12));
+}
+.dsw-writing-toggle:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary, #0969da);
+  outline-offset: 2px;
+}
 .dsw-writing-toggle.is-active {
-  color: var(--dsw-alias-brand-primary, #0969da);
-  border-color: var(--dsw-alias-brand-primary, #0969da);
+  color: var(--dsw-alias-state-business-primary, #0969da);
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12));
 }
 
 /* User-message projection: same geometry as the resident conversation bubble. */

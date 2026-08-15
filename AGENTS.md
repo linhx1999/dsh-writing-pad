@@ -2,15 +2,15 @@
 
 ## Project Structure & Module Organization
 
-Host code is in `src/`: `index.ts` provides the Remote service and tool; `draft-xml.ts` and `draft-session.ts` own XML and recovery. Browser components, state, Markdown, and CSS live under `src/client/`; Remote descriptors use `remote.ts` and `typert.ts`. Tests live in `tests/`. Treat `dist/` and `*.tgz` as generated.
+Host code is in `src/`: `index.ts` provides the Remote service/tool; `draft-xml.ts` and `draft-session.ts` own XML/recovery. Browser code lives under `src/client/`, tests under `tests/`, and Remote descriptors in `remote.ts`/`typert.ts`. Treat `dist/` and `*.tgz` as generated.
 
 ## Build, Test, and Development Commands
 
-- `pnpm install` installs dependencies subject to the repository's release-age policy.
-- `pnpm build` runs tsdown and produces Host, browser, and declaration artifacts in `dist/`.
-- `pnpm typecheck` runs strict TypeScript checking without emitting files.
-- `pnpm test` runs all `tests/*.test.ts` files with Node's test runner.
-- `pnpm pack --dry-run` builds and verifies the files included in the publishable package.
+- `pnpm install` installs dependencies under the release-age policy.
+- `pnpm build` produces Host, browser, and declaration artifacts in `dist/`.
+- `pnpm typecheck` runs strict TypeScript checks without emitting.
+- `pnpm test` runs `tests/*.test.ts` with Node's test runner.
+- `pnpm pack --dry-run` builds and verifies publishable files.
 
 For an end-to-end check, run `pnpm pack`, install its archive with `dsh plugin --profile web add ./dsh-writing-pad-<version>.tgz`, then start `dsh --profile web`.
 
@@ -28,7 +28,7 @@ Keep documentation in the same change as behavior. Update both `README.md` and `
 
 ## Architecture & Configuration Guardrails
 
-The `details` slot is single-occupant; priority `-10` intentionally shadows Harness's priority-`0` tool panel. Preserve the durable message sequence `assistant(tool_calls) -> tool/result`: never append a synthetic user message during tool execution. Full draft XML travels only with the next real user request. Inspect `pnpm-lock.yaml` before adding exact `minimumReleaseAgeExclude` entries; keep the policy enabled.
+The `details` slot is single-occupant; priority `-10` shadows Harness's priority-`0` tool panel. Blank sessions must reuse the real mounted `details` subtree: the `shell.overlay` bridge may restore its zeroed grid track, but must not render a second floating `WritingPad`. Preserve `assistant(tool_calls) -> tool/result`: never append a synthetic user message during tool execution. Full draft XML travels only with the next real user request. Inspect `pnpm-lock.yaml` before adding exact `minimumReleaseAgeExclude` entries; keep the policy enabled.
 
 ## Commit & Pull Request Guidelines
 
