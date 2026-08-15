@@ -12,6 +12,7 @@ Host code is in `src/`: `index.ts` provides the Remote/tool, while `draft-xml.ts
 - `pnpm test` runs `tests/*.test.ts` with Node's test runner.
 - `pnpm pack --dry-run` builds and verifies publishable files.
 - `pnpm dev` packs the current version, reinstalls it into the Web profile, and starts `dsh web`.
+- `pnpm release` validates a clean release, publishes it to npm after confirmation, verifies it, and creates the local version tag.
 
 ## Coding Style & Naming Conventions
 

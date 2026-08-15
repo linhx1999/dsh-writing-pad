@@ -8,10 +8,10 @@ A session-scoped Markdown writing pad for the DeepSeek Harness web GUI. It docks
 
 ## Highlights
 
-- **Open it anytime:** the labeled writing-pad control opens or closes the right column, including before a new session's first message, and stays open while switching sessions.
-- **Focused rewrites:** selecting text focuses the multi-line instruction editor; its DSH-style send button sits to the right of the default-instruction actions, pale blue while requirements are blank and full blue after input. Dragging either its top edge or the tool area's top edge moves both together while the editor's bottom edge stays anchored. Resize hints appear only on hover or focus, and reusable defaults persist in the browser.
-- **Review before apply:** `writing_draft` produces a candidate shown directly as a highlighted Diff, with accept and reject actions on the bottom status row. Leaving review accepts it by default.
-- **Visible state:** copied, generated, review-pending, and failure states use DSH theme-aware soft semantic pills beside the default-instruction actions on one compact row.
+- **Open it anytime:** open or close the writing pad from the composer toolbar and keep it open while switching sessions.
+- **Focused rewrites:** select text, enter multi-line instructions, save reusable defaults, and resize the instruction area.
+- **Review before apply:** `writing_draft` produces a Diff candidate that can be accepted or rejected and is accepted by default when leaving review.
+- **Visible state:** the UI reports saving, copying, generation, pending review, and failure states.
 - **Clean conversations:** the complete draft reaches the model, while the visible message bubble shows only the selected passage and additional instruction.
 - **Session-scoped state:** drafts remain isolated by session, with edit/preview modes, full-draft copy, clear, and up to 50 undo steps.
 - **No workspace writes:** drafts are staged in Host memory and never create or overwrite project files automatically.
@@ -35,6 +35,16 @@ For local development, package and reinstall the current version, then start the
 ```sh
 pnpm dev
 ```
+
+## Release
+
+Update and commit the version in `package.json`, make sure `npm login` is complete and the working tree is clean, then run:
+
+```sh
+pnpm release
+```
+
+The script runs type checks, tests, package verification, and a publish preview. After you type `publish`, it publishes to npm, verifies the version, and creates the local `v<version>` tag. It does not push the tag; review the release and follow the printed command to push it manually.
 
 ## Usage
 

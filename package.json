@@ -24,6 +24,7 @@
     "build": "tsdown",
     "dev": "bash scripts/reinstall-web.sh",
     "prepare": "pnpm build",
+    "release": "bash scripts/release.sh",
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/*.test.ts"
   },
