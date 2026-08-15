@@ -33,11 +33,11 @@ export type WritingPadProps = PropsRuntime<'details'> & {
 }
 
 const DEFAULT_REWRITE_INSTRUCTION = '保持原意，改善表达，使文字更清晰流畅。'
-const MIN_TOOLS_HEIGHT = 160
+const MIN_TOOLS_HEIGHT = 164
 const MAX_TOOLS_HEIGHT = 420
 const MIN_NOTE_HEIGHT = 54
-const MAX_NOTE_HEIGHT = 314
-const INITIAL_PANEL_HEIGHTS: PanelHeights = { tools: 160, note: 54 }
+const MAX_NOTE_HEIGHT = 310
+const INITIAL_PANEL_HEIGHTS: PanelHeights = { tools: 164, note: 54 }
 
 export function WritingPad(props: WritingPadProps) {
   const { sessionId: sid, store, bridge, onClose } = props
@@ -498,14 +498,6 @@ export function WritingPad(props: WritingPadProps) {
               if (event.key === 'Enter') event.stopPropagation()
             }}
           />
-          <button
-            type="button"
-            className={`dsw-writing-pad-ai-btn${hasRewriteNote ? '' : ' is-empty'}`}
-            disabled={busy || !isRewrite}
-            onClick={() => void handleWritingRequest()}
-          >
-            {busy ? '处理中…' : '发送'}
-          </button>
         </div>
         <div className="dsw-writing-pad-meta-row">
           <div className="dsw-writing-pad-feedback-slot">
@@ -521,6 +513,14 @@ export function WritingPad(props: WritingPadProps) {
             <button type="button" disabled={busy || entry.rewriteNote.trim() === '' || entry.rewriteNote.trim() === store.defaultRewriteNote()} onClick={handleSaveDefault}>设为默认</button>
             {store.defaultRewriteNote() !== '' && <button type="button" disabled={busy} onClick={handleClearDefault}>清除默认</button>}
           </div>
+          <button
+            type="button"
+            className={`dsw-writing-pad-ai-btn${hasRewriteNote ? '' : ' is-empty'}`}
+            disabled={busy || !isRewrite}
+            onClick={() => void handleWritingRequest()}
+          >
+            {busy ? '处理中…' : '发送'}
+          </button>
         </div>
         <div className="dsw-writing-pad-foot">
           <span>{chars} 字 · {words} 词</span>
