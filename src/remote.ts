@@ -13,12 +13,27 @@ export interface SaveDraftResult {
 
 export interface LoadDraftResult {
   text: string
+  review: DraftReviewResult | null
+}
+
+export interface DraftReviewResult {
+  id: string
+  before: string
+  after: string
+}
+
+export interface ResolveReviewResult {
+  ok: boolean
+  error: string
+  text: string
 }
 
 const sessionIdSchema = z.string().min(1)
 const textSchema = z.string()
+const reviewSchema = z.object({ id: z.string(), before: z.string(), after: z.string() })
 const saveDraftResultSchema = z.object({ saved: z.boolean() })
-const loadDraftResultSchema = z.object({ text: z.string() })
+const loadDraftResultSchema = z.object({ text: z.string(), review: reviewSchema.nullable() })
+const resolveReviewResultSchema = z.object({ ok: z.boolean(), error: z.string(), text: z.string() })
 
 const agentParameter = {
   name: 'agent',
@@ -65,18 +80,44 @@ export const descriptors: readonly InvocationDescriptor[] = [
   descriptor('loadDraft', [agentParameter], {
     mode: 'strict', typeSymbol: 'dsh-writing-pad#LoadDraftResult', schema: loadDraftResultSchema,
   }),
+  descriptor('resolveReview', [
+    agentParameter,
+    stringParameter('reviewId'),
+    {
+      name: 'decision',
+      wire: 'decision',
+      source: 'json',
+      codec: {
+        mode: 'strict',
+        typeSymbol: 'dsh-writing-pad#ReviewDecision',
+        schema: z.enum(['accept', 'reject']),
+      },
+    },
+  ], {
+    mode: 'strict', typeSymbol: 'dsh-writing-pad#ResolveReviewResult', schema: resolveReviewResultSchema,
+  }),
 ]
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteMap {
     'writingPad/saveDraft': (agentId: string, text: string) => Promise<RemoteResult<SaveDraftResult>>
     'writingPad/loadDraft': (agentId: string) => Promise<RemoteResult<LoadDraftResult>>
+    'writingPad/resolveReview': (
+      agentId: string,
+      reviewId: string,
+      decision: 'accept' | 'reject',
+    ) => Promise<RemoteResult<ResolveReviewResult>>
   }
 
   interface TypertRemoteNamespaceMap {
     writingPad: {
       saveDraft(agentId: string, text: string): Promise<RemoteResult<SaveDraftResult>>
       loadDraft(agentId: string): Promise<RemoteResult<LoadDraftResult>>
+      resolveReview(
+        agentId: string,
+        reviewId: string,
+        decision: 'accept' | 'reject',
+      ): Promise<RemoteResult<ResolveReviewResult>>
     }
   }
 }

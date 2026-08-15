@@ -113,3 +113,38 @@ export function renderMarkdown(src: string): string {
   closeList()
   return html.join('\n')
 }
+
+function commonLinePrefix(before: readonly string[], after: readonly string[]): number {
+  const limit = Math.min(before.length, after.length)
+  let index = 0
+  while (index < limit && before[index] === after[index]) index++
+  return index
+}
+
+function commonLineSuffix(before: readonly string[], after: readonly string[], prefix: number): number {
+  const limit = Math.min(before.length, after.length) - prefix
+  let count = 0
+  while (count < limit && before[before.length - 1 - count] === after[after.length - 1 - count]) count++
+  return count
+}
+
+/** Render one focused replacement as safe Markdown blocks with review highlights. */
+export function renderMarkdownDiff(before: string, after: string): string {
+  if (before === after) return renderMarkdown(after)
+  const oldLines = before.replace(/\r\n/g, '\n').split('\n')
+  const newLines = after.replace(/\r\n/g, '\n').split('\n')
+  const prefix = commonLinePrefix(oldLines, newLines)
+  const suffix = commonLineSuffix(oldLines, newLines, prefix)
+  const oldEnd = oldLines.length - suffix
+  const newEnd = newLines.length - suffix
+  const head = newLines.slice(0, prefix).join('\n')
+  const removed = oldLines.slice(prefix, oldEnd).join('\n')
+  const added = newLines.slice(prefix, newEnd).join('\n')
+  const tail = newLines.slice(newEnd).join('\n')
+  return [
+    head === '' ? '' : renderMarkdown(head),
+    removed === '' ? '' : `<div class="dsw-writing-pad-diff-delete">${renderMarkdown(removed)}</div>`,
+    added === '' ? '' : `<div class="dsw-writing-pad-diff-add">${renderMarkdown(added)}</div>`,
+    tail === '' ? '' : renderMarkdown(tail),
+  ].filter(Boolean).join('\n')
+}

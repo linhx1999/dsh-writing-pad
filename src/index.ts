@@ -10,10 +10,16 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import { deriveDraftFromSession, rewriteDraft } from './draft-session.ts'
+import {
+  createDraftReview,
+  deriveDraftStateFromSession,
+  REVIEW_PENDING_RESULT,
+  rewriteDraft,
+  type DerivedDraftState,
+} from './draft-session.ts'
 
 /** Process-local buffers keep typing cheap between durable conversation events. */
-const drafts = new Map<string, string>()
+const drafts = new Map<string, DerivedDraftState>()
 
 const DEFAULT_KEY = '__default__'
 
@@ -39,28 +45,52 @@ export class WritingPadService extends TypertRemoteService {
   }
 
   async saveDraft(agent: Agent, text: string): Promise<{ saved: boolean }> {
-    drafts.set(keyOf(agent.session.id), text)
+    const current = this.stateOf(agent)
+    drafts.set(keyOf(agent.session.id), {
+      draft: text,
+      review: current.review?.before === text ? current.review : null,
+    })
     return { saved: true }
   }
 
-  async loadDraft(agent: Agent): Promise<{ text: string }> {
-    return { text: this.draftOf(agent) }
+  async loadDraft(agent: Agent): Promise<{ text: string; review: DerivedDraftState['review'] }> {
+    const state = this.stateOf(agent)
+    return { text: state.draft, review: state.review }
   }
 
-  private draftOf(agent: Agent): string {
+  async resolveReview(
+    agent: Agent,
+    reviewId: string,
+    decision: 'accept' | 'reject',
+  ): Promise<{ ok: boolean; error: string; text: string }> {
+    const state = this.stateOf(agent)
+    if (state.review === null || state.review.id !== reviewId) {
+      return { ok: false, error: '待确认修改已过期，请重新加载', text: state.draft }
+    }
+    const text = decision === 'accept' ? state.review.after : state.review.before
+    drafts.set(keyOf(agent.session.id), { draft: text, review: null })
+    return { ok: true, error: '', text }
+  }
+
+  private stateOf(agent: Agent): DerivedDraftState {
     const key = keyOf(agent.session.id)
     const buffered = drafts.get(key)
     if (buffered !== undefined) return buffered
-    const restored = deriveDraftFromSession(agent.session.events)
+    const restored = deriveDraftStateFromSession(agent.session.events)
     drafts.set(key, restored)
     return restored
   }
 
-  private commitToolDraft(agent: Agent, text: string): { ok: boolean; error: string; draft: string } {
+  private stageToolDraft(agent: Agent, text: string): { ok: boolean; error: string; draft: string } {
     // Do not append a user/message here. The harness must append tool/result
     // immediately after assistant(tool_calls); the successful call/result pair
     // itself is enough to reconstruct this update after a restart.
-    drafts.set(keyOf(agent.session.id), text)
+    const current = this.stateOf(agent)
+    const before = current.review?.before ?? current.draft
+    drafts.set(keyOf(agent.session.id), {
+      draft: current.draft,
+      review: text === before ? null : createDraftReview(before, text),
+    })
     return { ok: true, error: '', draft: text }
   }
 
@@ -73,7 +103,7 @@ export class WritingPadService extends TypertRemoteService {
         'action=write、content=完整正文；不要只在普通 assistant 回复中给出正文。收到 operation="rewrite" 时调用 action=rewrite，' +
         'old 必须与当前草稿中的原文逐字一致（含 Markdown 标记），new 是替换内容；preview 选区可能不含 Markdown 标记，' +
         '应先在当前草稿中定位对应源码再复制为 old。需要确认当前内容时调用 action=read。' +
-        'write/rewrite 成功后正文会自动出现在写作板；本次工具调用及结果会记录该修改，随后只需简短确认。',
+        'write/rewrite 成功后修改会在写作板中等待用户审核；本次工具调用及结果会记录该候选修改，随后只需简短确认。',
       parameters: {
         action: { type: 'string', enum: ['read', 'write', 'rewrite'], required: true, description: '操作类型' },
         content: { type: 'string', description: 'write 时必填：要放入写作板的完整 Markdown 正文' },
@@ -96,7 +126,7 @@ export class WritingPadService extends TypertRemoteService {
           if ((args.action === 'read' || !ok) && typeof v.draft === 'string') {
             lines.push(v.draft.length > 0 ? v.draft : '(草稿为空)')
           } else if (ok) {
-            lines.push('草稿已写入写作板。')
+            lines.push(REVIEW_PENDING_RESULT)
           }
           if (lines.length === 0) lines.push('(无内容)')
           return [{ type: 'text', text: lines.join('\n') }]
@@ -109,21 +139,23 @@ export class WritingPadService extends TypertRemoteService {
           return { ok: false, error: '当前没有可用会话', draft: '' }
         }
         if (a.action === 'read') {
-          return { ok: true, error: '', draft: this.draftOf(agent) }
+          const state = this.stateOf(agent)
+          return { ok: true, error: '', draft: state.review?.after ?? state.draft }
         }
         if (a.action === 'write') {
           if (typeof a.content !== 'string') {
-            return { ok: false, error: 'write 缺少 content 参数', draft: this.draftOf(agent) }
+            return { ok: false, error: 'write 缺少 content 参数', draft: this.stateOf(agent).draft }
           }
-          return this.commitToolDraft(agent, a.content)
+          return this.stageToolDraft(agent, a.content)
         }
         if (a.action === 'rewrite') {
           const oldText = typeof a.old === 'string' ? a.old.trim() : ''
           if (oldText.length === 0 || typeof a.new !== 'string') {
-            return { ok: false, error: 'rewrite 缺少非空 old 或 new 参数', draft: this.draftOf(agent) }
+            return { ok: false, error: 'rewrite 缺少非空 old 或 new 参数', draft: this.stateOf(agent).draft }
           }
           const newText = a.new
-          const draft = this.draftOf(agent)
+          const state = this.stateOf(agent)
+          const draft = state.review?.after ?? state.draft
           const rewritten = rewriteDraft(draft, oldText, newText)
           if (!rewritten.matched) {
             return {
@@ -132,7 +164,7 @@ export class WritingPadService extends TypertRemoteService {
               draft,
             }
           }
-          return this.commitToolDraft(agent, rewritten.draft)
+          return this.stageToolDraft(agent, rewritten.draft)
         }
         return { ok: false, error: '未知的 action: ' + String(a.action), draft: '' }
       },
@@ -147,7 +179,7 @@ interface RemoteDecoratorContext {
   addInitializer(initializer: RemoteInitializer): void
 }
 
-type RemoteMethodName = 'saveDraft' | 'loadDraft'
+type RemoteMethodName = 'saveDraft' | 'loadDraft' | 'resolveReview'
 
 function registerRemoteMarker(name: RemoteMethodName): void {
   // Remote only consumes name/static/private/addInitializer at runtime. This
@@ -167,7 +199,7 @@ function registerRemoteMarker(name: RemoteMethodName): void {
   })
 }
 
-for (const name of ['saveDraft', 'loadDraft'] as const) {
+for (const name of ['saveDraft', 'loadDraft', 'resolveReview'] as const) {
   registerRemoteMarker(name)
 }
 

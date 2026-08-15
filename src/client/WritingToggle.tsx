@@ -1,12 +1,13 @@
 /** Composer tool-row action that opens and closes the writing pad column. */
 
-import { useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WritingPadStore } from './store.ts'
 
 export type WritingToggleProps = PropsRuntime<'conversation.input.left'> & {
   store: WritingPadStore
   onToggle(sessionId: string): void
+  onEnsureOpen(): void
 }
 
 const WRITING_PAD_ICON = (
@@ -22,6 +23,9 @@ export function WritingToggle(props: WritingToggleProps) {
     () => props.store.entryOf(props.sessionId),
   )
   const open = entry.open
+  useEffect(() => {
+    if (open) props.onEnsureOpen()
+  }, [open, props.onEnsureOpen])
   const label = open ? '收起写作板' : '打开写作板'
   return (
     <button

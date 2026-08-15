@@ -6,7 +6,10 @@ import type { SessionEvent, SessionEventMap, SessionEventType } from '@deepseek-
 import type {} from '@deepseek-ai/dsh-tools/types'
 import {
   applyWritingDraftOperation,
+  createDraftReview,
   deriveDraftFromSession,
+  deriveDraftStateFromSession,
+  REVIEW_PENDING_RESULT,
   WRITING_PAD_PLUGIN,
 } from '../src/draft-session.ts'
 import { serializeDraftSnapshot, serializeWritingRequest } from '../src/draft-xml.ts'
@@ -78,6 +81,45 @@ test('a successful native tool result applies without an intervening user messag
   assert.equal(deriveDraftFromSession(events), '模型生成的新稿')
 })
 
+test('new tool results stage a deterministic review without replacing the accepted draft', () => {
+  const events: SessionEvent[] = [
+    request(1, '旧稿'),
+    call(2, 'rewrite-review', { action: 'rewrite', old: '旧稿', new: '候选新稿' }),
+    result(3, 'rewrite-review', REVIEW_PENDING_RESULT),
+  ]
+
+  const state = deriveDraftStateFromSession(events)
+  assert.equal(state.draft, '旧稿')
+  assert.deepEqual(state.review, createDraftReview('旧稿', '候选新稿'))
+  assert.equal(deriveDraftFromSession(events), '旧稿')
+})
+
+test('consecutive review operations build one candidate from the accepted base', () => {
+  const events: SessionEvent[] = [
+    request(1, '甲乙丙'),
+    call(2, 'review-1', { action: 'rewrite', old: '甲', new: 'A' }),
+    result(3, 'review-1', REVIEW_PENDING_RESULT),
+    call(4, 'review-2', { action: 'rewrite', old: '丙', new: 'C' }),
+    result(5, 'review-2', REVIEW_PENDING_RESULT),
+  ]
+
+  assert.deepEqual(
+    deriveDraftStateFromSession(events).review,
+    createDraftReview('甲乙丙', 'A乙C'),
+  )
+})
+
+test('the next real request durably settles an earlier review candidate', () => {
+  const events: SessionEvent[] = [
+    request(1, '旧稿'),
+    call(2, 'review-before-request', { action: 'write', content: '候选稿' }),
+    result(3, 'review-before-request', REVIEW_PENDING_RESULT),
+    request(4, '候选稿'),
+  ]
+
+  assert.deepEqual(deriveDraftStateFromSession(events), { draft: '候选稿', review: null })
+})
+
 test('successful rewrites apply while rendered semantic failures do not', () => {
   const events: SessionEvent[] = [
     request(1, '第一段\n\n第二段'),
@@ -102,6 +144,23 @@ test('successful Code Mode dispatches reconstruct the same model write', () => {
   })
 
   assert.equal(deriveDraftFromSession([request(1, ''), codeDispatch]), 'Code Mode 写回')
+})
+
+test('new Code Mode dispatches stage review candidates', () => {
+  const codeDispatch = event(2, 'tool/code-dispatch', {
+    rootCallId: CallId('run-review'),
+    parentCallId: CallId('run-review'),
+    subCallId: CallId('run-review:code:1'),
+    name: 'writing_draft',
+    arguments: { action: 'write', content: 'Code Mode 候选' },
+    isError: false,
+    content: [{ type: 'text', text: REVIEW_PENDING_RESULT }],
+  })
+
+  assert.deepEqual(
+    deriveDraftStateFromSession([request(1, '原稿'), codeDispatch]).review,
+    createDraftReview('原稿', 'Code Mode 候选'),
+  )
 })
 
 test('legacy XML snapshots remain recoverable during migration', () => {

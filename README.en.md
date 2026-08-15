@@ -8,11 +8,12 @@ A session-scoped Markdown writing pad for the DeepSeek Harness web GUI. It docks
 
 ## Highlights
 
-- **Open it anytime:** the labeled writing-pad control in the composer opens or closes the right column, including before a new session's first message.
-- **Focused rewrites:** select text, add an optional instruction, and submit a rewrite; the UI never generates or replaces the full document unexpectedly.
-- **Explicit model writeback:** the model updates the draft through `writing_draft`. Ordinary assistant replies never become document content.
+- **Open it anytime:** the labeled writing-pad control opens or closes the right column, including before a new session's first message, and stays open while switching sessions.
+- **Focused rewrites:** selecting text focuses the multi-line instruction editor; dragging either its top edge or the tool area's top edge moves both together while the editor's bottom edge stays anchored. Resize hints appear only on hover or focus, and reusable defaults persist in the browser.
+- **Review before apply:** `writing_draft` produces a candidate shown as a highlighted Diff. Accept or reject it; leaving review accepts it by default.
+- **Visible state:** copied, generated, review-pending, and failure states use distinct semantic-color pills below the instruction editor.
 - **Clean conversations:** the complete draft reaches the model, while the visible message bubble shows only the selected passage and additional instruction.
-- **Session-scoped state:** drafts remain isolated by session, with edit/preview modes, clear, and up to 50 undo steps.
+- **Session-scoped state:** drafts remain isolated by session, with edit/preview modes, full-draft copy, clear, and up to 50 undo steps.
 - **No workspace writes:** drafts are staged in Host memory and never create or overwrite project files automatically.
 
 ## Install
@@ -29,19 +30,25 @@ Start the web GUI:
 dsh web
 ```
 
+For local development, package and reinstall the current version, then start the web GUI with:
+
+```sh
+pnpm dev
+```
+
 ## Usage
 
 1. Click “Writing Pad” in the composer tool row.
 2. Enter or paste Markdown and switch between edit and preview as needed.
-3. Select the passage to change.
-4. Add an optional instruction and click “Send rewrite request.”
-5. Wait for `writing_draft` to write back the result; use Undo when needed.
+3. Select the passage to change; focus moves to the additional-instruction editor.
+4. Enter instructions. Press Enter to send or Shift+Enter for a new line, and optionally save the text as your default.
+5. Review the highlighted Diff and accept or reject it. Leaving review without choosing accepts the candidate by default.
 
 ## Data and recovery
 
 - Edits are debounced into the current Host process's memory.
 - A rewrite request carries the complete current draft in the same XML user message; the UI hides that XML.
-- After a restart, the plugin can recover from the latest writing request and successful `writing_draft` results.
+- After a restart, the plugin recovers the latest accepted draft and pending `writing_draft` candidate; this browser replays stored review decisions.
 - Manual edits that have not travelled with a rewrite request do not survive a Host-process restart.
 
 ## Uninstall

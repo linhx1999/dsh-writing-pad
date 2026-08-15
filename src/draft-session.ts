@@ -6,6 +6,18 @@ import type {} from '@deepseek-ai/dsh-tools/types'
 import { parseDraftSnapshot, parseWritingRequestDraft } from './draft-xml.ts'
 
 export const WRITING_PAD_PLUGIN = 'dsh-writing-pad'
+export const REVIEW_PENDING_RESULT = '修改待用户确认。'
+
+export interface DraftReview {
+  id: string
+  before: string
+  after: string
+}
+
+export interface DerivedDraftState {
+  draft: string
+  review: DraftReview | null
+}
 
 type DraftArguments = Record<string, unknown>
 
@@ -75,6 +87,21 @@ export function applyWritingDraftOperation(draft: string, args: DraftArguments):
   return rewriteDraft(draft, oldText, args.new).draft
 }
 
+export function createDraftReview(before: string, after: string): DraftReview {
+  const source = before + '\0' + after
+  let left = 0x811c9dc5
+  let right = 0x9e3779b9
+  for (let index = 0; index < source.length; index++) {
+    const code = source.charCodeAt(index)
+    left = Math.imul(left ^ code, 0x01000193)
+    right = Math.imul(right ^ code, 0x85ebca6b)
+  }
+  const id = [left, right]
+    .map(value => (value >>> 0).toString(16).padStart(8, '0'))
+    .join('') + '-' + source.length.toString(36)
+  return { id, before, after }
+}
+
 function messageText(event: Extract<SessionEvent, { type: 'user/message' }>): string[] {
   return event.data.content.flatMap(block => block.type === 'text' ? [block.text] : [])
 }
@@ -89,14 +116,31 @@ function isSemanticFailure(isError: boolean, content: readonly ContentBlock[]): 
   return text.startsWith('错误：') || text.startsWith('Error:')
 }
 
+function isReviewResult(content: readonly ContentBlock[]): boolean {
+  return resultText(content).includes(REVIEW_PENDING_RESULT)
+}
+
 /**
  * Fold the durable session log into the latest draft. User requests provide
  * full snapshots; only successful native or Code Mode writing_draft outcomes
  * apply later write/rewrite operations.
  */
-export function deriveDraftFromSession(events: readonly SessionEvent[]): string {
+export function deriveDraftStateFromSession(events: readonly SessionEvent[]): DerivedDraftState {
   let draft = ''
+  let review: DraftReview | null = null
   const pending = new Map<string, DraftArguments>()
+
+  const applyOperation = (args: DraftArguments, staged: boolean): void => {
+    if (!staged) {
+      draft = applyWritingDraftOperation(draft, args)
+      review = null
+      return
+    }
+    const before = review?.before ?? draft
+    const working = review?.after ?? draft
+    const after = applyWritingDraftOperation(working, args)
+    review = after === before ? null : createDraftReview(before, after)
+  }
 
   for (const event of events) {
     if (event.type === 'user/message') {
@@ -106,8 +150,13 @@ export function deriveDraftFromSession(events: readonly SessionEvent[]): string 
         const legacyDraft = source.kind === 'plugin' && source.plugin === WRITING_PAD_PLUGIN
           ? parseDraftSnapshot(text)
           : null
-        if (requestDraft !== null) draft = requestDraft
-        else if (legacyDraft !== null) draft = legacyDraft
+        if (requestDraft !== null) {
+          draft = requestDraft
+          review = null
+        } else if (legacyDraft !== null) {
+          draft = legacyDraft
+          review = null
+        }
       }
       continue
     }
@@ -123,15 +172,21 @@ export function deriveDraftFromSession(events: readonly SessionEvent[]): string 
       pending.delete(source.callId)
       if (args === undefined) continue
       const block = event.data.message.content[0]
-      if (!isSemanticFailure(block.isError === true, block.content)) draft = applyWritingDraftOperation(draft, args)
+      if (!isSemanticFailure(block.isError === true, block.content)) {
+        applyOperation(args, isReviewResult(block.content))
+      }
       continue
     }
     if (event.type === 'tool/code-dispatch' && event.data.name === 'writing_draft') {
       const args = asRecord(event.data.arguments)
       if (args !== null && !isSemanticFailure(event.data.isError, event.data.content)) {
-        draft = applyWritingDraftOperation(draft, args)
+        applyOperation(args, isReviewResult(event.data.content))
       }
     }
   }
-  return draft
+  return { draft, review }
+}
+
+export function deriveDraftFromSession(events: readonly SessionEvent[]): string {
+  return deriveDraftStateFromSession(events).draft
 }

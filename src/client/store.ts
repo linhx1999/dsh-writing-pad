@@ -1,29 +1,46 @@
 /** Shared writing-pad state across the two registered slots (one instance per apply). */
 
+export interface DraftReview {
+  id: string
+  before: string
+  after: string
+}
+
+export type FeedbackTone = 'info' | 'success' | 'generated' | 'warning' | 'error'
+
+export interface WritingPadFeedback {
+  id: number
+  text: string
+  tone: FeedbackTone
+  persistent: boolean
+}
+
 export interface WritingPadEntry {
   open: boolean
   draft: string
   undoStack: readonly string[]
   status: 'idle' | 'saving' | 'saved' | 'error'
-  notice: string
+  feedback: WritingPadFeedback | null
   mode: 'edit' | 'preview'
   selStart: number
   selEnd: number
   previewSel: string
   rewriteNote: string
+  review: DraftReview | null
 }
 
-export const defaultEntry = (): WritingPadEntry => ({
+export const defaultEntry = (defaultRewriteNote = ''): WritingPadEntry => ({
   open: false,
   draft: '',
   undoStack: [],
   status: 'idle',
-  notice: '',
+  feedback: null,
   mode: 'edit',
   selStart: 0,
   selEnd: 0,
   previewSel: '',
-  rewriteNote: '',
+  rewriteNote: defaultRewriteNote,
+  review: null,
 })
 
 export type DraftStatePatch = Partial<Omit<WritingPadEntry, 'draft' | 'undoStack'>>
@@ -36,14 +53,18 @@ export interface WritingPadStore {
     patch?: DraftStatePatch
   }): void
   undoDraft(sessionId: string, patch?: DraftStatePatch): string | undefined
+  defaultRewriteNote(): string
+  setDefaultRewriteNote(text: string): void
   subscribe(listener: () => void): () => void
 }
 
 const MAX_UNDO_STEPS = 50
 
-export function createWritingPadStore(): WritingPadStore {
+export function createWritingPadStore(initialDefaultRewriteNote = ''): WritingPadStore {
   const entries = new Map<string, WritingPadEntry>()
   const listeners = new Set<() => void>()
+  let rewriteDefault = initialDefaultRewriteNote
+  let padOpen = false
   const publish = (): void => {
     for (const fn of listeners) fn()
   }
@@ -51,12 +72,18 @@ export function createWritingPadStore(): WritingPadStore {
     entryOf(sessionId) {
       let entry = entries.get(sessionId)
       if (entry === undefined) {
-        entry = defaultEntry()
+        entry = { ...defaultEntry(rewriteDefault), open: padOpen }
         entries.set(sessionId, entry)
       }
       return entry
     },
     setEntry(sessionId, patch) {
+      if (typeof patch.open === 'boolean') {
+        padOpen = patch.open
+        for (const [key, entry] of entries) {
+          entries.set(key, { ...entry, open: patch.open })
+        }
+      }
       entries.set(sessionId, { ...this.entryOf(sessionId), ...patch })
       publish()
     },
@@ -88,6 +115,19 @@ export function createWritingPadStore(): WritingPadStore {
       })
       publish()
       return previous
+    },
+    defaultRewriteNote() {
+      return rewriteDefault
+    },
+    setDefaultRewriteNote(text) {
+      const previous = rewriteDefault
+      rewriteDefault = text
+      for (const [sessionId, entry] of entries) {
+        if (entry.rewriteNote === '' || entry.rewriteNote === previous) {
+          entries.set(sessionId, { ...entry, rewriteNote: text })
+        }
+      }
+      publish()
     },
     subscribe(listener) {
       listeners.add(listener)

@@ -7,6 +7,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import writingPadRemote from '../remote.ts'
 import { BlankDetailsLayoutBridge } from './BlankDetailsLayoutBridge.tsx'
+import { loadDefaultRewriteNote } from './preferences.ts'
 import { createWritingPadStore, type WritingPadStore } from './store.ts'
 import { WritingPad, type WritingPadBridge } from './WritingPad.tsx'
 import { WritingRequestMessage } from './WritingRequestMessage.tsx'
@@ -22,7 +23,7 @@ async function unwrap<T>(call: Promise<RemoteResult<T>>): Promise<T> {
 
 export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   const disposeRemote = await ctx.remote.$mount(writingPadRemote)
-  const store: WritingPadStore = createWritingPadStore()
+  const store: WritingPadStore = createWritingPadStore(loadDefaultRewriteNote())
   // The api-gateway installs each mounted Remote namespace as a Cordis service
   // named `remote.<namespace>`, and reading `ctx.remote.writingPad` requires
   // that qualified name in the caller fiber's `inject` (the framework's own
@@ -40,6 +41,9 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
           resolve({
             saveDraft: (sessionId, text) => unwrap(ns.saveDraft(sessionId, text)),
             loadDraft: (sessionId) => unwrap(ns.loadDraft(sessionId)),
+            resolveReview: (sessionId, reviewId, decision) => unwrap(
+              ns.resolveReview(sessionId, reviewId, decision),
+            ),
           })
         },
       }).then(() => undefined, (error: unknown) => reject(error))
@@ -57,6 +61,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     store.setEntry(sid, { open: false })
     ctx.layout.closeDetails()
   }
+  const ensureOpen = (): void => ctx.layout.openDetails()
 
   ctx.slots.inject('details', () => ctx.slots.register(
     // ui-conversation owns priority 0. A lower rank intentionally shadows
@@ -79,7 +84,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     // The input-left seat is the composer's one-row tool area. Keeping this
     // control here makes the writing surface available where requests begin.
     { name: 'conversation.input.left', id: 'writing-pad-toggle', order: 30 },
-    (props) => <WritingToggle store={store} onToggle={toggle} {...props} />,
+    (props) => <WritingToggle store={store} onToggle={toggle} onEnsureOpen={ensureOpen} {...props} />,
   ))
   for (const key of ['user', 'steering'] as const) {
     ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(

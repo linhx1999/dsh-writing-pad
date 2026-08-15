@@ -11,6 +11,7 @@ Host code is in `src/`: `index.ts` provides the Remote/tool, while `draft-xml.ts
 - `pnpm typecheck` runs strict TypeScript checks without emitting.
 - `pnpm test` runs `tests/*.test.ts` with Node's test runner.
 - `pnpm pack --dry-run` builds and verifies publishable files.
+- `pnpm dev` packs the current version, reinstalls it into the Web profile, and starts `dsh web`.
 
 ## Coding Style & Naming Conventions
 
