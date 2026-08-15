@@ -11,7 +11,7 @@ A session-scoped Markdown writing pad for the DeepSeek Harness web GUI. It docks
 - **Open it anytime:** the labeled writing-pad control opens or closes the right column, including before a new session's first message, and stays open while switching sessions.
 - **Focused rewrites:** selecting text focuses the multi-line instruction editor; dragging either its top edge or the tool area's top edge moves both together while the editor's bottom edge stays anchored. Resize hints appear only on hover or focus, and reusable defaults persist in the browser.
 - **Review before apply:** `writing_draft` produces a candidate shown as a highlighted Diff. Accept or reject it; leaving review accepts it by default.
-- **Visible state:** copied, generated, review-pending, and failure states use distinct semantic-color pills below the instruction editor.
+- **Visible state:** copied, generated, review-pending, and failure states use DSH theme-aware soft semantic pills beside the default-instruction actions on one compact row.
 - **Clean conversations:** the complete draft reaches the model, while the visible message bubble shows only the selected passage and additional instruction.
 - **Session-scoped state:** drafts remain isolated by session, with edit/preview modes, full-draft copy, clear, and up to 50 undo steps.
 - **No workspace writes:** drafts are staged in Host memory and never create or overwrite project files automatically.

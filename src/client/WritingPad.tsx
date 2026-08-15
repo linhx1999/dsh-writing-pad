@@ -501,18 +501,20 @@ export function WritingPad(props: WritingPadProps) {
             {busy ? '处理中…' : '发送'}
           </button>
         </div>
-        <div className="dsw-writing-pad-feedback-row">
-          {entry.feedback !== null && (
-            <span
-              className={`dsw-writing-pad-feedback is-${entry.feedback.tone}`}
-              role={entry.feedback.tone === 'error' ? 'alert' : 'status'}
-              aria-live={entry.feedback.tone === 'error' ? 'assertive' : 'polite'}
-            >{entry.feedback.text}</span>
-          )}
-        </div>
-        <div className="dsw-writing-pad-default-actions">
-          <button type="button" disabled={busy || entry.rewriteNote.trim() === '' || entry.rewriteNote.trim() === store.defaultRewriteNote()} onClick={handleSaveDefault}>设为默认</button>
-          {store.defaultRewriteNote() !== '' && <button type="button" disabled={busy} onClick={handleClearDefault}>清除默认</button>}
+        <div className="dsw-writing-pad-meta-row">
+          <div className="dsw-writing-pad-feedback-slot">
+            {entry.feedback !== null && (
+              <span
+                className={`dsw-writing-pad-feedback is-${entry.feedback.tone}`}
+                role={entry.feedback.tone === 'error' ? 'alert' : 'status'}
+                aria-live={entry.feedback.tone === 'error' ? 'assertive' : 'polite'}
+              >{entry.feedback.text}</span>
+            )}
+          </div>
+          <div className="dsw-writing-pad-default-actions">
+            <button type="button" disabled={busy || entry.rewriteNote.trim() === '' || entry.rewriteNote.trim() === store.defaultRewriteNote()} onClick={handleSaveDefault}>设为默认</button>
+            {store.defaultRewriteNote() !== '' && <button type="button" disabled={busy} onClick={handleClearDefault}>清除默认</button>}
+          </div>
         </div>
         <div className="dsw-writing-pad-foot">
           <span>{chars} 字 · {words} 词</span>
