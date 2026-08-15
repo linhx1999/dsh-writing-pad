@@ -299,11 +299,13 @@
   position: absolute;
   right: 13px;
   bottom: 6px;
+  transition: background-color 100ms ease, opacity 100ms ease;
 }
-.dsw-writing-pad-ai-btn:hover {
+.dsw-writing-pad-ai-btn:hover:not(:disabled) {
   background: var(--dsw-alias-button-info-hover, #679efe);
 }
-.dsw-writing-pad-ai-btn:disabled,
+.dsw-writing-pad-ai-btn.is-empty { opacity: 0.4; }
+.dsw-writing-pad-ai-btn:disabled { cursor: not-allowed; }
 .dsw-writing-pad-close:disabled,
 .dsw-writing-pad-copy:disabled,
 .dsw-writing-pad-undo:disabled,

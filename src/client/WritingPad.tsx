@@ -398,6 +398,7 @@ export function WritingPad(props: WritingPadProps) {
 
   const selection = selectedText()
   const isRewrite = selection !== undefined && entry.review === null
+  const hasRewriteNote = entry.rewriteNote.trim() !== ''
   const chars = entry.draft.replace(/\s+/g, '').length
   const words = entry.draft.trim() === '' ? 0 : entry.draft.trim().split(/\s+/).length
   const hint = isRewrite
@@ -497,7 +498,12 @@ export function WritingPad(props: WritingPadProps) {
               if (event.key === 'Enter') event.stopPropagation()
             }}
           />
-          <button type="button" className="dsw-writing-pad-ai-btn" disabled={busy || !isRewrite} onClick={() => void handleWritingRequest()}>
+          <button
+            type="button"
+            className={`dsw-writing-pad-ai-btn${hasRewriteNote ? '' : ' is-empty'}`}
+            disabled={busy || !isRewrite}
+            onClick={() => void handleWritingRequest()}
+          >
             {busy ? '处理中…' : '发送'}
           </button>
         </div>
