@@ -20,11 +20,15 @@
     "README.en.md",
     "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsdown",
     "dev": "bash scripts/reinstall-web.sh",
+    "postpublish": "bash scripts/postpublish.sh",
     "prepare": "pnpm build",
-    "release": "bash scripts/release.sh",
+    "prepublishOnly": "bash scripts/prepublish.sh",
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/*.test.ts"
   },

@@ -12,7 +12,7 @@ Host code is in `src/`: `index.ts` provides the Remote/tool, while `draft-xml.ts
 - `pnpm test` runs `tests/*.test.ts` with Node's test runner.
 - `pnpm pack --dry-run` builds and verifies publishable files.
 - `pnpm dev` packs the current version, reinstalls it into the Web profile, and starts `dsh web`.
-- `pnpm release` validates a clean release, publishes it to npm after confirmation, verifies it, and creates the local version tag.
+- `pnpm publish` validates a clean release, publishes it to npm without an extra confirmation, verifies it, and creates the local version tag.
 
 ## Coding Style & Naming Conventions
 
@@ -28,7 +28,7 @@ Document behavior in the same change. Update both READMEs for user-facing usage,
 
 ## Packaging & Release
 
-Release from a clean tree. Update `package.json`; keep README install commands unpinned so they resolve npm's `latest` tag. Run `pnpm typecheck`, `pnpm test`, and `pnpm pack --dry-run`; confirm name, version, and files. Use `pnpm pack` for a tarball. For npm, run `npm login`, `pnpm publish --dry-run`, then `pnpm publish --access public`; versions cannot be reused. Verify with `npm view dsh-writing-pad@<version> version`, commit as `chore(release): <version>`, and tag `v<version>`. If release-age policy blocks a fresh version, wait or test its tarball while keeping the policy enabled.
+Release from a clean tree. Update `package.json`; keep README install commands unpinned so they resolve npm's `latest` tag. Run `pnpm typecheck`, `pnpm test`, and `pnpm pack --dry-run`; confirm name, version, and files. Use `pnpm pack` for a tarball. For npm, run `npm login`, `pnpm publish --dry-run`, then `pnpm publish`; versions cannot be reused. Verify with `npm view dsh-writing-pad@<version> version`, commit as `chore(release): <version>`, and tag `v<version>`. If release-age policy blocks a fresh version, wait or test its tarball while keeping the policy enabled.
 
 ## Architecture & Configuration Guardrails
 

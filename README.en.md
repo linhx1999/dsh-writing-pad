@@ -41,10 +41,10 @@ pnpm dev
 Update and commit the version in `package.json`, make sure `npm login` is complete and the working tree is clean, then run:
 
 ```sh
-pnpm release
+pnpm publish
 ```
 
-The script runs type checks, tests, package verification, and a publish preview. After you type `publish`, it publishes to npm, verifies the version, and creates the local `v<version>` tag. It does not push the tag; review the release and follow the printed command to push it manually.
+The prepublish hook runs type checks, tests, and package verification before publishing directly to npm without an extra confirmation prompt. The postpublish hook verifies the version and creates the local `v<version>` tag. It does not push the tag; review the release and follow the printed command to push it manually.
 
 ## Usage
 
