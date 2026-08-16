@@ -237,6 +237,33 @@ export function WritingPad(props: WritingPadProps) {
     editBurst.current = false
   }
 
+  const persistDraft = (text: string): void => {
+    bridge.saveDraft(sid, text).then(() => {
+      if (store.entryOf(sid).draft === text) {
+        store.setEntry(sid, { status: 'saved' })
+        showFeedback('feedback.saved', 'success')
+      }
+    }).catch((error: unknown) => {
+      if (store.entryOf(sid).draft === text) {
+        store.setEntry(sid, { status: 'error' })
+        showFeedback(
+          'feedback.saveFailed',
+          'error',
+          true,
+          error instanceof Error ? error.message : undefined,
+        )
+      }
+    })
+  }
+
+  const flushPendingSave = (): void => {
+    if (saveTimer.current === null) return
+    clearTimeout(saveTimer.current)
+    saveTimer.current = null
+    editBurst.current = false
+    persistDraft(store.entryOf(sid).draft)
+  }
+
   const handleDraftChange = (text: string): void => {
     if (text === store.entryOf(sid).draft) return
     store.replaceDraft(sid, text, { remember: !editBurst.current, patch: { status: 'saving' } })
@@ -246,22 +273,7 @@ export function WritingPad(props: WritingPadProps) {
     saveTimer.current = setTimeout(() => {
       saveTimer.current = null
       editBurst.current = false
-      bridge.saveDraft(sid, text).then(() => {
-        if (store.entryOf(sid).draft === text) {
-          store.setEntry(sid, { status: 'saved' })
-          showFeedback('feedback.saved', 'success')
-        }
-      }).catch((error: unknown) => {
-        if (store.entryOf(sid).draft === text) {
-          store.setEntry(sid, { status: 'error' })
-          showFeedback(
-            'feedback.saveFailed',
-            'error',
-            true,
-            error instanceof Error ? error.message : undefined,
-          )
-        }
-      })
+      persistDraft(text)
     }, 800)
   }
 
@@ -525,6 +537,7 @@ export function WritingPad(props: WritingPadProps) {
           autoFocus
           spellCheck={false}
           onChange={(event) => handleDraftChange(event.target.value)}
+          onBlur={flushPendingSave}
           onSelect={(event) => store.setEntry(sid, { selStart: event.currentTarget.selectionStart, selEnd: event.currentTarget.selectionEnd })}
           onPointerUp={(event) => completeEditSelection(event.currentTarget)}
           onKeyUp={(event) => store.setEntry(sid, { selStart: event.currentTarget.selectionStart, selEnd: event.currentTarget.selectionEnd })}

@@ -18,7 +18,7 @@ A session-scoped Markdown writing pad for the DeepSeek Harness web GUI. It docks
 - **Proactive writing-pad delivery:** when users ask to draft, write, continue, or generate usable text, the model prioritizes `write_full_draft` for a complete candidate; selection edits use `rewrite_selected_text`. A tool call opens the writing pad automatically, then the candidate reveals its Diff at the first change.
 - **Visible state:** the UI reports saving, copying, generation, pending review, and failure states.
 - **Host-synchronized language:** client UI copy switches immediately with dsh's 中文/English setting.
-- **Clean conversations:** the complete draft reaches the model, while the visible message bubble shows only the selected passage and additional instruction.
+- **Clean conversations:** while the writing pad is non-empty, the complete draft travels as separate context beside the main-composer message; the message remains the user's original text and is never labelled as an additional instruction.
 - **Session-scoped state:** drafts remain isolated by session, with edit/preview modes, full-draft copy, clear, and up to 50 undo steps.
 - **No workspace writes:** drafts are staged in Host memory and never create or overwrite project files automatically.
 
@@ -67,9 +67,9 @@ The writing pad's client controls, status feedback, and writing-request summarie
 ## Data and recovery
 
 - Edits are debounced into the current Host process's memory.
-- A rewrite request carries the complete current draft in the same XML user message; the UI hides that XML.
+- While the writing pad is non-empty, every real user message from the main composer carries a separate complete-draft context, with the user's original text outside that context. Selection rewrites retain their own additional-instruction field and also carry the full draft. Both paths produce one user message whose full draft stays hidden in the UI.
 - After a restart, the plugin recovers the latest accepted draft and pending writing-tool candidate; legacy `writing_draft` events remain recoverable, and this browser replays stored review decisions.
-- Manual edits that have not travelled with a rewrite request do not survive a Host-process restart.
+- Manual edits that have not travelled with any user message do not survive a Host-process restart.
 
 ## Uninstall
 

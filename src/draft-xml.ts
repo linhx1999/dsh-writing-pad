@@ -6,6 +6,7 @@ const CDATA_END = ']]>'
 const CDATA_SPLIT = ']]]]><![CDATA[>'
 const SNAPSHOT_PATTERN = /<dsh-writing-pad version="1">\s*<draft><!\[CDATA\[([\s\S]*?)\]\]><\/draft>\s*<\/dsh-writing-pad>/
 const REQUEST_PATTERN = /^\s*<dsh-writing-pad-request\s+version="1"\s+operation="(write|rewrite)">([\s\S]*?)<\/dsh-writing-pad-request>\s*$/
+const CONTEXT_PATTERN = /^<dsh-writing-pad-context\s+version="1">([\s\S]*?)<\/dsh-writing-pad-context>(?:\n\n([\s\S]*))?$/
 const DRAFT_PATTERN = /<draft><!\[CDATA\[([\s\S]*?)\]\]><\/draft>/
 const INSTRUCTION_PATTERN = /<instruction><!\[CDATA\[([\s\S]*?)\]\]><\/instruction>/
 const SELECTION_PATTERN = /<selection\s+mode="(edit|preview)"(?:\s+start="(\d+)"\s+end="(\d+)")?><!\[CDATA\[([\s\S]*?)\]\]><\/selection>/
@@ -29,6 +30,11 @@ export interface WritingRequest {
 export interface WritingRequestDisplayLabels {
   selection: string
   instruction: string
+}
+
+export interface DraftContextMessage {
+  draft: string
+  message: string
 }
 
 const DEFAULT_DISPLAY_LABELS: WritingRequestDisplayLabels = {
@@ -59,9 +65,28 @@ export function parseDraftSnapshot(text: string): string | null {
   return match === null ? null : readCdata(match[1]!)
 }
 
-/** Read the complete draft carried by one real writing-pad user request. */
-export function parseWritingRequestDraft(text: string): string | null {
-  return parseWritingRequest(text)?.draft ?? null
+/** Serialize a draft context followed by the user's unchanged conversation message. */
+export function serializeDraftContextMessage(draft: string, message: string): string {
+  const context = [
+    '<dsh-writing-pad-context version="1">',
+    `  <draft>${cdata(draft)}</draft>`,
+    '</dsh-writing-pad-context>',
+  ].join('\n')
+  return message === '' ? context : `${context}\n\n${message}`
+}
+
+/** Parse a draft context without reclassifying the trailing conversation message. */
+export function parseDraftContextMessage(text: string): DraftContextMessage | null {
+  const context = CONTEXT_PATTERN.exec(text)
+  if (context === null) return null
+  const draft = DRAFT_PATTERN.exec(context[1]!)
+  if (draft === null) return null
+  return { draft: readCdata(draft[1]!), message: context[2] ?? '' }
+}
+
+/** Read the complete draft carried by either supported real user-message envelope. */
+export function parseWritingPadMessageDraft(text: string): string | null {
+  return parseWritingRequest(text)?.draft ?? parseDraftContextMessage(text)?.draft ?? null
 }
 
 /** Parse a supported request envelope for durable recovery and UI projection. */

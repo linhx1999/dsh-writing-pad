@@ -13,6 +13,7 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import {
   createDraftReview,
   deriveDraftStateFromSession,
+  injectDraftIntoUserMessages,
   REVIEW_PENDING_RESULT,
   rewriteDraft,
   type DerivedDraftState,
@@ -74,6 +75,14 @@ export class WritingPadService extends TypertRemoteService {
     for (const initialize of remoteInitializers) initialize.call(this)
     ctx.effect(() => ctx.tools.register(this.writeToolDefinition()))
     ctx.effect(() => ctx.tools.register(this.rewriteToolDefinition()))
+    ctx.on('agent/pre-step', async ({ agent }, next) => {
+      const decision = await next()
+      if (decision.kind === 'reject') return decision
+      const state = this.stateOf(agent)
+      const draft = state.review?.after ?? state.draft
+      const messages = injectDraftIntoUserMessages(decision.messages, draft)
+      return messages === decision.messages ? decision : { kind: 'enter', messages }
+    })
   }
 
   async saveDraft(agent: Agent, text: string): Promise<{ saved: boolean }> {

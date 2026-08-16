@@ -8,6 +8,7 @@ export const WRITE_FULL_DRAFT_DESCRIPTION =
   '就应积极且优先调用本工具，无需用户提到“写作板”、工具名或 XML。' +
   '典型触发包括但不限于：文章、故事、文案、邮件、报告、方案、大纲、脚本、演讲稿、社交媒体帖子和其他可直接使用的文本。' +
   '若收到 <dsh-writing-pad-request operation="write"> 并指定 tool="write_full_draft"，必须调用本工具。' +
+  '若收到 <dsh-writing-pad-context>，其中 draft 是写作板全文，context 后的普通文本是用户本轮消息；当该消息要求修改或继续正文时调用本工具。' +
   '应尽量根据已知信息直接完成可用初稿，不要因为缺少次要细节而放弃调用。将可直接使用的完整 Markdown 正文传入 content，' +
   '不要把成稿只放在普通 assistant 回复中。' +
   '当请求包含 selection 或 operation="rewrite" 时禁止调用本工具，应调用 rewrite_selected_text。' +

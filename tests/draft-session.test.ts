@@ -9,10 +9,16 @@ import {
   createDraftReview,
   deriveDraftFromSession,
   deriveDraftStateFromSession,
+  injectDraftIntoUserMessages,
   REVIEW_PENDING_RESULT,
   WRITING_PAD_PLUGIN,
 } from '../src/draft-session.ts'
-import { serializeDraftSnapshot, serializeWritingRequest } from '../src/draft-xml.ts'
+import {
+  parseDraftContextMessage,
+  serializeDraftContextMessage,
+  serializeDraftSnapshot,
+  serializeWritingRequest,
+} from '../src/draft-xml.ts'
 import {
   LEGACY_WRITING_DRAFT_TOOL,
   REWRITE_SELECTED_TEXT_TOOL,
@@ -74,6 +80,48 @@ test('a real user request carries the complete draft snapshot', () => {
   const events = [request(1, '# 初稿\n\n正文')]
   assert.equal(deriveDraftFromSession(events), '# 初稿\n\n正文')
   assert.equal(events.filter(item => item.type === 'user/message').length, 1)
+})
+
+test('ordinary human messages carry a non-empty writing-pad draft', () => {
+  const message = createUserMessage({
+    content: [
+      { type: 'text', text: '请整体润色' },
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AA==' } },
+    ],
+    source: { kind: 'user' },
+  })
+  const [injected] = injectDraftIntoUserMessages([message], '# 待修改正文')
+  assert.notEqual(injected, message)
+  assert.equal(injected?.id, message.id)
+  assert.equal(injected?.source.kind, 'user')
+  assert.deepEqual(injected?.content.slice(1), message.content)
+  assert.equal(injected?.content.filter(block => block.type === 'image').length, 1)
+  const text = injected?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
+  assert.deepEqual(parseDraftContextMessage(text ?? ''), {
+    draft: '# 待修改正文',
+    message: '请整体润色',
+  })
+})
+
+test('draft injection skips empty drafts, plugin context, and structured requests', () => {
+  const human = createUserMessage({
+    content: [{ type: 'text', text: '普通消息' }],
+    source: { kind: 'user' },
+  })
+  const plugin = createUserMessage({
+    content: [{ type: 'text', text: '插件上下文' }],
+    source: { kind: 'plugin', plugin: 'test' },
+  })
+  const structured = request(1, '已有快照').data
+  const contextual = createUserMessage({
+    content: [{ type: 'text', text: serializeDraftContextMessage('已有正文', '继续修改') }],
+    source: { kind: 'user' },
+  })
+
+  const emptyDraft = [human]
+  assert.equal(injectDraftIntoUserMessages(emptyDraft, '  '), emptyDraft)
+  const unchanged = [plugin, structured, contextual]
+  assert.equal(injectDraftIntoUserMessages(unchanged, '正文'), unchanged)
 })
 
 test('a successful native tool result applies without an intervening user message', () => {

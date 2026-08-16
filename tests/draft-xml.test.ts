@@ -2,9 +2,11 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   formatWritingRequestDisplay,
+  parseDraftContextMessage,
   parseDraftSnapshot,
   parseWritingRequest,
-  parseWritingRequestDraft,
+  parseWritingPadMessageDraft,
+  serializeDraftContextMessage,
   serializeDraftSnapshot,
   serializeWritingRequest,
 } from '../src/draft-xml.ts'
@@ -37,7 +39,7 @@ test('writing requests declare the operation, destination and selection', () => 
   assert.match(xml, /selection mode="edit" start="3" end="5"/)
   assert.match(xml, /destination tool="rewrite_selected_text" required="true"/)
   assert.match(xml, /更简洁/)
-  assert.equal(parseWritingRequestDraft(xml), '# 当前草稿\n\n包含 ]]> 标记')
+  assert.equal(parseWritingPadMessageDraft(xml), '# 当前草稿\n\n包含 ]]> 标记')
   const parsed = parseWritingRequest(xml)
   assert.deepEqual(parsed, {
     operation: 'rewrite',
@@ -59,6 +61,23 @@ test('writing requests declare the operation, destination and selection', () => 
     'Selected passage\n原文\n\nAdditional instructions\n更简洁 ]]> 一些',
   )
   assert.doesNotMatch(englishDisplay, /当前草稿/)
+})
+
+test('draft context keeps the conversation message separate from rewrite instructions', () => {
+  const text = serializeDraftContextMessage('# 待修改正文\n\n含 ]]> 标记', '请整体润色，不要改变标题')
+  assert.deepEqual(parseDraftContextMessage(text), {
+    draft: '# 待修改正文\n\n含 ]]> 标记',
+    message: '请整体润色，不要改变标题',
+  })
+  assert.equal(parseWritingPadMessageDraft(text), '# 待修改正文\n\n含 ]]> 标记')
+  assert.match(text, /<\/dsh-writing-pad-context>\n\n请整体润色/)
+  assert.doesNotMatch(text, /<instruction>/)
+})
+
+test('draft context parser rejects unsupported or incomplete envelopes', () => {
+  assert.equal(parseDraftContextMessage('<dsh-writing-pad-context version="2"></dsh-writing-pad-context>'), null)
+  assert.equal(parseDraftContextMessage('<dsh-writing-pad-context version="1"></dsh-writing-pad-context>'), null)
+  assert.equal(parseDraftContextMessage('普通用户消息'), null)
 })
 
 test('custom display labels omit the selection heading for full writes', () => {

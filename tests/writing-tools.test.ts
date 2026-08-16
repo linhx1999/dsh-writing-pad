@@ -18,6 +18,7 @@ test('full-draft writes proactively handle concrete writing requests', () => {
   assert.match(WRITE_FULL_DRAFT_DESCRIPTION, /文章、故事、文案、邮件、报告/)
   assert.match(WRITE_FULL_DRAFT_DESCRIPTION, /不要因为缺少次要细节而放弃调用/)
   assert.match(WRITE_FULL_DRAFT_DESCRIPTION, /不要把成稿只放在普通 assistant 回复中/)
+  assert.match(WRITE_FULL_DRAFT_DESCRIPTION, /dsh-writing-pad-context.+要求修改或继续正文时调用本工具/)
 })
 
 test('full-draft writes exclude selection rewrites and writing-only discussion', () => {

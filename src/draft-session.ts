@@ -1,9 +1,15 @@
-/** Reconstruct writing-pad state from durable user requests and tool outcomes. */
+/** Own durable draft recovery and draft-context attachment to human messages. */
 
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
+import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm/types'
 import type {} from '@deepseek-ai/dsh-tools/types'
-import { parseDraftSnapshot, parseWritingRequestDraft } from './draft-xml.ts'
+import {
+  parseDraftSnapshot,
+  parseDraftContextMessage,
+  parseWritingRequest,
+  parseWritingPadMessageDraft,
+  serializeDraftContextMessage,
+} from './draft-xml.ts'
 import {
   LEGACY_WRITING_DRAFT_TOOL,
   REWRITE_SELECTED_TEXT_TOOL,
@@ -22,6 +28,40 @@ export interface DraftReview {
 export interface DerivedDraftState {
   draft: string
   review: DraftReview | null
+}
+
+/**
+ * Attach the current complete draft to ordinary human messages before a step is logged.
+ *
+ * @param messages - Messages admitted to the proposed model step.
+ * @param draft - Current writing-pad text, including Markdown bytes.
+ * @returns The original array when no message needs wrapping, otherwise a rewritten copy.
+ */
+export function injectDraftIntoUserMessages(
+  messages: UserMessage[],
+  draft: string,
+): UserMessage[] {
+  if (draft.trim() === '') return messages
+  let changed = false
+  const rewritten = messages.map((message): UserMessage => {
+    if (message.source.kind !== 'user') return message
+    const conversationText = message.content
+      .flatMap(block => block.type === 'text' ? [block.text] : [])
+      .join('')
+    if (parseWritingRequest(conversationText) !== null || parseDraftContextMessage(conversationText) !== null) {
+      return message
+    }
+
+    const hasConversationText = message.content.some(block => block.type === 'text')
+    const context = serializeDraftContextMessage(draft, '')
+    const content: ContentBlock[] = [
+      { type: 'text', text: hasConversationText ? `${context}\n\n` : context },
+      ...message.content,
+    ]
+    changed = true
+    return { ...message, content }
+  })
+  return changed ? rewritten : messages
 }
 
 type DraftArguments = Record<string, unknown>
@@ -158,7 +198,7 @@ export function deriveDraftStateFromSession(events: readonly SessionEvent[]): De
     if (event.type === 'user/message') {
       const source = event.data.source
       for (const text of messageText(event)) {
-        const requestDraft = source.kind === 'user' ? parseWritingRequestDraft(text) : null
+        const requestDraft = source.kind === 'user' ? parseWritingPadMessageDraft(text) : null
         const legacyDraft = source.kind === 'plugin' && source.plugin === WRITING_PAD_PLUGIN
           ? parseDraftSnapshot(text)
           : null

@@ -15,6 +15,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   formatWritingRequestDisplay,
+  parseDraftContextMessage,
   parseWritingRequest,
   type WritingRequest,
 } from '../draft-xml.ts'
@@ -102,9 +103,10 @@ function formatClock(time: number): string {
 export function WritingRequestMessage({ node, loadImage, t, tPad }: Props) {
   const { text, images, rest } = contentParts(node.data.content)
   const request = useMemo(() => parseWritingRequest(text), [text])
-  const visibleText = request === null
-    ? text
-    : formatWritingRequestDisplay(request, {
+  const draftContext = useMemo(() => parseDraftContextMessage(text), [text])
+  const visibleText = draftContext !== null
+    ? draftContext.message
+    : request === null ? text : formatWritingRequestDisplay(request, {
         selection: tPad('message.selectionLabel'),
         instruction: tPad('message.instructionLabel'),
       })
@@ -144,7 +146,9 @@ export function WritingRequestMessage({ node, loadImage, t, tPad }: Props) {
         />
         {(visibleText !== '' || rest.length > 0) && (
           <div className="dsw-writing-message-bubble">
-            {request === null ? <UserText text={text} /> : <RequestSummary request={request} tPad={tPad} />}
+            {request === null
+              ? <UserText text={visibleText} />
+              : <RequestSummary request={request} tPad={tPad} />}
             {rest.map((block, index) => (
               <JsonBlock key={index} label={t('message.extraBlock')} payload={block} />
             ))}
