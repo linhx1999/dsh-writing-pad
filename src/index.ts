@@ -1,6 +1,6 @@
 /**
  * Host half of dsh-writing-pad: the session-backed writingPad Remote service
- * and the writing_draft agent tool.
+ * and the focused full-draft/selection-rewrite agent tools.
  *
  * The service is a TypertRemoteService; `./remote` and `./typert` carry the
  * matching wire contribution (see README, "Client→Host bridge").
@@ -17,6 +17,12 @@ import {
   rewriteDraft,
   type DerivedDraftState,
 } from './draft-session.ts'
+import {
+  REWRITE_SELECTED_TEXT_DESCRIPTION,
+  REWRITE_SELECTED_TEXT_TOOL,
+  WRITE_FULL_DRAFT_DESCRIPTION,
+  WRITE_FULL_DRAFT_TOOL,
+} from './writing-tools.ts'
 
 /** Process-local buffers keep typing cheap between durable conversation events. */
 const drafts = new Map<string, DerivedDraftState>()
@@ -30,6 +36,31 @@ function keyOf(sessionId: string | undefined): string {
 type RemoteInitializer = (this: WritingPadService) => void
 const remoteInitializers: RemoteInitializer[] = []
 
+function writingToolOutput() {
+  return {
+    schema: {
+      type: 'object' as const,
+      properties: {
+        ok: { type: 'boolean' as const },
+        error: { type: 'string' as const },
+        draft: { type: 'string' as const },
+      },
+      additionalProperties: true,
+    },
+    render(_args: unknown, value: unknown) {
+      const result: Record<string, unknown> = value !== null && typeof value === 'object'
+        ? value as Record<string, unknown>
+        : {}
+      const lines: string[] = []
+      if (typeof result.error === 'string' && result.error.length > 0) lines.push('错误：' + result.error)
+      if (result.ok === true) lines.push(REVIEW_PENDING_RESULT)
+      else if (typeof result.draft === 'string') lines.push(result.draft.length > 0 ? result.draft : '(草稿为空)')
+      if (lines.length === 0) lines.push('(无内容)')
+      return [{ type: 'text' as const, text: lines.join('\n') }]
+    },
+  }
+}
+
 /** Host API for the writing pad client, mounted into `ctx.remote.writingPad`. */
 export class WritingPadService extends TypertRemoteService {
   static inject = ['agents', 'tools']
@@ -41,7 +72,8 @@ export class WritingPadService extends TypertRemoteService {
     // pass. Run the decorator initializers registered below explicitly so the
     // output is ordinary JavaScript on every supported Node release.
     for (const initialize of remoteInitializers) initialize.call(this)
-    ctx.effect(() => ctx.tools.register(this.toolDefinition()))
+    ctx.effect(() => ctx.tools.register(this.writeToolDefinition()))
+    ctx.effect(() => ctx.tools.register(this.rewriteToolDefinition()))
   }
 
   async saveDraft(agent: Agent, text: string): Promise<{ saved: boolean }> {
@@ -94,79 +126,50 @@ export class WritingPadService extends TypertRemoteService {
     return { ok: true, error: '', draft: text }
   }
 
-  /** The writing_draft tool is the model's explicit output destination. */
-  private toolDefinition() {
+  /** Full-document writes and selection rewrites have separate model interfaces. */
+  private writeToolDefinition() {
     return defineTool({
-      name: 'writing_draft',
-      description:
-        '当前会话写作板的唯一模型写入出口。收到 <dsh-writing-pad-request operation="write"> 时，生成完整写作结果并调用 ' +
-        'action=write、content=完整正文；不要只在普通 assistant 回复中给出正文。收到 operation="rewrite" 时调用 action=rewrite，' +
-        'old 必须与当前草稿中的原文逐字一致（含 Markdown 标记），new 是替换内容；preview 选区可能不含 Markdown 标记，' +
-        '应先在当前草稿中定位对应源码再复制为 old。需要确认当前内容时调用 action=read。' +
-        'write/rewrite 成功后修改会在写作板中等待用户审核；本次工具调用及结果会记录该候选修改，随后只需简短确认。',
+      name: WRITE_FULL_DRAFT_TOOL,
+      description: WRITE_FULL_DRAFT_DESCRIPTION,
       parameters: {
-        action: { type: 'string', enum: ['read', 'write', 'rewrite'], required: true, description: '操作类型' },
-        content: { type: 'string', description: 'write 时必填：要放入写作板的完整 Markdown 正文' },
-        old: { type: 'string', description: 'rewrite 时必填：草稿中要替换的原文片段，必须逐字一致' },
-        new: { type: 'string', description: 'rewrite 时必填：替换后的新内容' },
+        content: { type: 'string', required: true, description: '要放入写作板的完整 Markdown 正文' },
       },
-      output: {
-        schema: {
-          type: 'object',
-          properties: { ok: { type: 'boolean' }, error: { type: 'string' }, draft: { type: 'string' } },
-          additionalProperties: true,
-        },
-        render(args, value) {
-          const v: Record<string, unknown> = value !== null && typeof value === 'object'
-            ? value as Record<string, unknown>
-            : {}
-          const lines: string[] = []
-          const ok = v.ok === true
-          if (typeof v.error === 'string' && v.error.length > 0) lines.push('错误：' + v.error)
-          if ((args.action === 'read' || !ok) && typeof v.draft === 'string') {
-            lines.push(v.draft.length > 0 ? v.draft : '(草稿为空)')
-          } else if (ok) {
-            lines.push(REVIEW_PENDING_RESULT)
-          }
-          if (lines.length === 0) lines.push('(无内容)')
-          return [{ type: 'text', text: lines.join('\n') }]
-        },
-      },
+      output: writingToolOutput(),
       execute: async (args, exec) => {
-        const a = args
         const agent = exec.agent
-        if (agent === undefined) {
-          return { ok: false, error: '当前没有可用会话', draft: '' }
+        if (agent === undefined) return { ok: false, error: '当前没有可用会话', draft: '' }
+        return this.stageToolDraft(agent, args.content)
+      },
+    })
+  }
+
+  private rewriteToolDefinition() {
+    return defineTool({
+      name: REWRITE_SELECTED_TEXT_TOOL,
+      description: REWRITE_SELECTED_TEXT_DESCRIPTION,
+      parameters: {
+        old: { type: 'string', required: true, description: '选区对应的最小 Markdown 源码片段，必须与草稿源码一致，禁止传入全文' },
+        new: { type: 'string', required: true, description: '仅用于替换 old 的局部内容，禁止传入全文' },
+      },
+      output: writingToolOutput(),
+      execute: async (args, exec) => {
+        const agent = exec.agent
+        if (agent === undefined) return { ok: false, error: '当前没有可用会话', draft: '' }
+        const oldText = args.old.trim()
+        const state = this.stateOf(agent)
+        const draft = state.review?.after ?? state.draft
+        if (oldText.length === 0) {
+          return { ok: false, error: 'old 必须是非空的局部原文片段', draft }
         }
-        if (a.action === 'read') {
-          const state = this.stateOf(agent)
-          return { ok: true, error: '', draft: state.review?.after ?? state.draft }
-        }
-        if (a.action === 'write') {
-          if (typeof a.content !== 'string') {
-            return { ok: false, error: 'write 缺少 content 参数', draft: this.stateOf(agent).draft }
+        const rewritten = rewriteDraft(draft, oldText, args.new)
+        if (!rewritten.matched) {
+          return {
+            ok: false,
+            error: '草稿中找不到与 old 逐字一致的原文片段（old 必须与草稿完全一致，含 Markdown 标记）',
+            draft,
           }
-          return this.stageToolDraft(agent, a.content)
         }
-        if (a.action === 'rewrite') {
-          const oldText = typeof a.old === 'string' ? a.old.trim() : ''
-          if (oldText.length === 0 || typeof a.new !== 'string') {
-            return { ok: false, error: 'rewrite 缺少非空 old 或 new 参数', draft: this.stateOf(agent).draft }
-          }
-          const newText = a.new
-          const state = this.stateOf(agent)
-          const draft = state.review?.after ?? state.draft
-          const rewritten = rewriteDraft(draft, oldText, newText)
-          if (!rewritten.matched) {
-            return {
-              ok: false,
-              error: '草稿中找不到与 old 逐字一致的原文片段（old 必须与草稿完全一致，含 Markdown 标记）',
-              draft,
-            }
-          }
-          return this.stageToolDraft(agent, rewritten.draft)
-        }
-        return { ok: false, error: '未知的 action: ' + String(a.action), draft: '' }
+        return this.stageToolDraft(agent, rewritten.draft)
       },
     })
   }

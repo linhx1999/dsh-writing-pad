@@ -13,6 +13,11 @@ import {
   WRITING_PAD_PLUGIN,
 } from '../src/draft-session.ts'
 import { serializeDraftSnapshot, serializeWritingRequest } from '../src/draft-xml.ts'
+import {
+  LEGACY_WRITING_DRAFT_TOOL,
+  REWRITE_SELECTED_TEXT_TOOL,
+  WRITE_FULL_DRAFT_TOOL,
+} from '../src/writing-tools.ts'
 
 function event<T extends SessionEventType>(
   seq: number,
@@ -37,12 +42,13 @@ function call(
   seq: number,
   callId: string,
   args: Record<string, unknown>,
+  name = LEGACY_WRITING_DRAFT_TOOL,
 ): SessionEvent<'tool/call'> {
   return event(seq, 'tool/call', {
     turn: 1,
     step: 1,
     callId: CallId(callId),
-    name: 'writing_draft',
+    name,
     arguments: JSON.stringify(args),
   })
 }
@@ -73,7 +79,7 @@ test('a real user request carries the complete draft snapshot', () => {
 test('a successful native tool result applies without an intervening user message', () => {
   const events: SessionEvent[] = [
     request(1, '旧稿'),
-    call(2, 'write-1', { action: 'write', content: '模型生成的新稿' }),
+    call(2, 'write-1', { content: '模型生成的新稿' }, WRITE_FULL_DRAFT_TOOL),
     result(3, 'write-1', '草稿已写入写作板。'),
   ]
 
@@ -84,7 +90,7 @@ test('a successful native tool result applies without an intervening user messag
 test('new tool results stage a deterministic review without replacing the accepted draft', () => {
   const events: SessionEvent[] = [
     request(1, '旧稿'),
-    call(2, 'rewrite-review', { action: 'rewrite', old: '旧稿', new: '候选新稿' }),
+    call(2, 'rewrite-review', { old: '旧稿', new: '候选新稿' }, REWRITE_SELECTED_TEXT_TOOL),
     result(3, 'rewrite-review', REVIEW_PENDING_RESULT),
   ]
 
@@ -137,8 +143,8 @@ test('successful Code Mode dispatches reconstruct the same model write', () => {
     rootCallId: CallId('run-1'),
     parentCallId: CallId('run-1'),
     subCallId: CallId('run-1:code:1'),
-    name: 'writing_draft',
-    arguments: { action: 'write', content: 'Code Mode 写回' },
+    name: WRITE_FULL_DRAFT_TOOL,
+    arguments: { content: 'Code Mode 写回' },
     isError: false,
     content: [{ type: 'text', text: '草稿已写入写作板。' }],
   })
@@ -151,8 +157,8 @@ test('new Code Mode dispatches stage review candidates', () => {
     rootCallId: CallId('run-review'),
     parentCallId: CallId('run-review'),
     subCallId: CallId('run-review:code:1'),
-    name: 'writing_draft',
-    arguments: { action: 'write', content: 'Code Mode 候选' },
+    name: WRITE_FULL_DRAFT_TOOL,
+    arguments: { content: 'Code Mode 候选' },
     isError: false,
     content: [{ type: 'text', text: REVIEW_PENDING_RESULT }],
   })

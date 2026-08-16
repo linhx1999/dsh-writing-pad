@@ -4,6 +4,11 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type {} from '@deepseek-ai/dsh-tools/types'
 import { parseDraftSnapshot, parseWritingRequestDraft } from './draft-xml.ts'
+import {
+  LEGACY_WRITING_DRAFT_TOOL,
+  REWRITE_SELECTED_TEXT_TOOL,
+  WRITE_FULL_DRAFT_TOOL,
+} from './writing-tools.ts'
 
 export const WRITING_PAD_PLUGIN = 'dsh-writing-pad'
 export const REVIEW_PENDING_RESULT = '修改待用户确认。'
@@ -33,6 +38,13 @@ function parseArguments(value: string): DraftArguments | null {
   } catch {
     return null
   }
+}
+
+function normalizeWritingToolArguments(name: string, args: DraftArguments): DraftArguments | null {
+  if (name === LEGACY_WRITING_DRAFT_TOOL) return args
+  if (name === WRITE_FULL_DRAFT_TOOL) return { ...args, action: 'write' }
+  if (name === REWRITE_SELECTED_TEXT_TOOL) return { ...args, action: 'rewrite' }
+  return null
 }
 
 function locateInDraft(draft: string, oldText: string): { start: number; end: number } | null {
@@ -77,7 +89,7 @@ export function rewriteDraft(
   }
 }
 
-/** Apply one successful writing_draft call to a reconstructed draft. */
+/** Apply one normalized successful writing-tool call to a reconstructed draft. */
 export function applyWritingDraftOperation(draft: string, args: DraftArguments): string {
   if (args.action === 'write' && typeof args.content === 'string') return args.content
   if (args.action !== 'rewrite' || typeof args.new !== 'string') return draft
@@ -122,8 +134,8 @@ function isReviewResult(content: readonly ContentBlock[]): boolean {
 
 /**
  * Fold the durable session log into the latest draft. User requests provide
- * full snapshots; only successful native or Code Mode writing_draft outcomes
- * apply later write/rewrite operations.
+ * full snapshots; only successful native or Code Mode writing-tool outcomes
+ * apply later full-document writes or selection rewrites.
  */
 export function deriveDraftStateFromSession(events: readonly SessionEvent[]): DerivedDraftState {
   let draft = ''
@@ -160,9 +172,10 @@ export function deriveDraftStateFromSession(events: readonly SessionEvent[]): De
       }
       continue
     }
-    if (event.type === 'tool/call' && event.data.name === 'writing_draft') {
+    if (event.type === 'tool/call') {
       const args = parseArguments(event.data.arguments)
-      if (args !== null) pending.set(event.data.callId, args)
+      const operation = args === null ? null : normalizeWritingToolArguments(event.data.name, args)
+      if (operation !== null) pending.set(event.data.callId, operation)
       continue
     }
     if (event.type === 'tool/result') {
@@ -177,10 +190,11 @@ export function deriveDraftStateFromSession(events: readonly SessionEvent[]): De
       }
       continue
     }
-    if (event.type === 'tool/code-dispatch' && event.data.name === 'writing_draft') {
+    if (event.type === 'tool/code-dispatch') {
       const args = asRecord(event.data.arguments)
-      if (args !== null && !isSemanticFailure(event.data.isError, event.data.content)) {
-        applyOperation(args, isReviewResult(event.data.content))
+      const operation = args === null ? null : normalizeWritingToolArguments(event.data.name, args)
+      if (operation !== null && !isSemanticFailure(event.data.isError, event.data.content)) {
+        applyOperation(operation, isReviewResult(event.data.content))
       }
     }
   }

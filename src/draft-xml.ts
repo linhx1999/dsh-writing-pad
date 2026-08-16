@@ -1,5 +1,7 @@
 /** Versioned XML envelopes shared by the Host snapshot store and web client. */
 
+import { REWRITE_SELECTED_TEXT_TOOL, WRITE_FULL_DRAFT_TOOL } from './writing-tools.ts'
+
 const CDATA_END = ']]>'
 const CDATA_SPLIT = ']]]]><![CDATA[>'
 const SNAPSHOT_PATTERN = /<dsh-writing-pad version="1">\s*<draft><!\[CDATA\[([\s\S]*?)\]\]><\/draft>\s*<\/dsh-writing-pad>/
@@ -93,6 +95,7 @@ export function formatWritingRequestDisplay(request: WritingRequest): string {
 
 /** Serialize the single user request that tells the model where its result belongs. */
 export function serializeWritingRequest(request: WritingRequest): string {
+  const destination = request.operation === 'write' ? WRITE_FULL_DRAFT_TOOL : REWRITE_SELECTED_TEXT_TOOL
   const lines = [
     `<dsh-writing-pad-request version="1" operation="${request.operation}">`,
     `  <draft>${cdata(request.draft)}</draft>`,
@@ -106,7 +109,7 @@ export function serializeWritingRequest(request: WritingRequest): string {
     lines.push(`  <selection mode="${selection.mode}"${offsets}>${cdata(selection.text)}</selection>`)
   }
   lines.push(
-    `  <destination tool="writing_draft" action="${request.operation}" required="true" />`,
+    `  <destination tool="${destination}" required="true" />`,
     '</dsh-writing-pad-request>',
   )
   return lines.join('\n')

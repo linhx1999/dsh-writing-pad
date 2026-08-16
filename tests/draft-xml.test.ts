@@ -35,7 +35,7 @@ test('writing requests declare the operation, destination and selection', () => 
   })
   assert.match(xml, /operation="rewrite"/)
   assert.match(xml, /selection mode="edit" start="3" end="5"/)
-  assert.match(xml, /destination tool="writing_draft" action="rewrite" required="true"/)
+  assert.match(xml, /destination tool="rewrite_selected_text" required="true"/)
   assert.match(xml, /更简洁/)
   assert.equal(parseWritingRequestDraft(xml), '# 当前草稿\n\n包含 ]]> 标记')
   const parsed = parseWritingRequest(xml)
@@ -49,6 +49,19 @@ test('writing requests declare the operation, destination and selection', () => 
   const display = formatWritingRequestDisplay(parsed)
   assert.equal(display, '修改内容\n原文\n\n额外要求\n更简洁 ]]> 一些')
   assert.doesNotMatch(display, /当前草稿/)
+})
+
+test('full writes and selection rewrites route to different tools', () => {
+  const write = serializeWritingRequest({ operation: 'write', draft: '', instruction: '起草' })
+  const rewrite = serializeWritingRequest({
+    operation: 'rewrite',
+    draft: '原文',
+    instruction: '改写',
+    selection: { mode: 'edit', start: 0, end: 2, text: '原文' },
+  })
+
+  assert.match(write, /destination tool="write_full_draft" required="true"/)
+  assert.match(rewrite, /destination tool="rewrite_selected_text" required="true"/)
 })
 
 test('writing request parser rejects unrelated and unsupported envelopes', () => {
