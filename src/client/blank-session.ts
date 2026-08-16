@@ -12,6 +12,11 @@ export function currentBlankSessionId<SessionId extends string>(
   return current !== undefined && state.byId[current]?.blank === true ? current : undefined
 }
 
+/** Whether the ordinary details column should reflect the writing-pad preference. */
+export function shouldOpenHostDetails(blank: boolean, padOpen: boolean): boolean {
+  return !blank && padOpen
+}
+
 const MIN_CENTER_WIDTH = 640
 const MIN_DETAILS_WIDTH = 300
 const DEFAULT_DETAILS_WIDTH = 360

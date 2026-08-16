@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { serializeWritingRequest, type WritingSelection } from '../draft-xml.ts'
+import { shouldOpenHostDetails } from './blank-session.ts'
 import { renderMarkdown, renderMarkdownDiff } from './markdown.ts'
 import { resizePanelHeights, type PanelHeights } from './panel-resize.ts'
 import {
@@ -52,6 +53,7 @@ export function WritingPad(props: WritingPadProps) {
   const [panelHeights, setPanelHeights] = useState(INITIAL_PANEL_HEIGHTS)
   const { note: noteHeight, tools: toolsHeight } = panelHeights
   const entry = useSyncExternalStore(store.subscribe, () => store.entryOf(sid))
+  const blank = props.useSession(snapshot => snapshot.blank)
   const latestEntry = useRef(entry)
   latestEntry.current = entry
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -181,6 +183,10 @@ export function WritingPad(props: WritingPadProps) {
     seenWritingCall.current.ids.add(writingToolCallId)
     onReveal(sid)
   }, [onReveal, sid, writingToolCallId])
+
+  useEffect(() => {
+    if (shouldOpenHostDetails(blank, entry.open)) onReveal(sid)
+  }, [blank, entry.open, onReveal, sid])
 
   useEffect(() => {
     if (entry.review === null) return

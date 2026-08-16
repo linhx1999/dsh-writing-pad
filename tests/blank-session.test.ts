@@ -4,6 +4,7 @@ import {
   blankDetailsWidth,
   currentBlankSessionId,
   firstGridTrackWidth,
+  shouldOpenHostDetails,
 } from '../src/client/blank-session.ts'
 
 test('currentBlankSessionId selects only the current blank session', () => {
@@ -16,6 +17,12 @@ test('currentBlankSessionId selects only the current blank session', () => {
   assert.equal(currentBlankSessionId({ current: 'active', byId }), undefined)
   assert.equal(currentBlankSessionId({ current: 'missing', byId }), undefined)
   assert.equal(currentBlankSessionId({ current: undefined, byId }), undefined)
+})
+
+test('an open writing pad returns to the host details column after the first prompt', () => {
+  assert.equal(shouldOpenHostDetails(true, true), false)
+  assert.equal(shouldOpenHostDetails(false, true), true)
+  assert.equal(shouldOpenHostDetails(false, false), false)
 })
 
 test('blankDetailsWidth follows the details concession used by ui-layout', () => {
