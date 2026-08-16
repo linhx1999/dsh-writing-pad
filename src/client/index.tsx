@@ -61,6 +61,10 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     if (open) ctx.layout.closeDetails()
     else ctx.layout.openDetails()
   }
+  const reveal = (sid: string): void => {
+    if (!store.entryOf(sid).open) store.setEntry(sid, { open: true })
+    ctx.layout.openDetails()
+  }
   const close = (sid: string): void => {
     store.setEntry(sid, { open: false })
     ctx.layout.closeDetails()
@@ -71,7 +75,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     // ui-conversation owns priority 0. A lower rank intentionally shadows
     // its DetailsPanel while the writing-pad bundle is installed.
     { name: 'details', priority: -10, locale: NS },
-    (props) => <WritingPad store={store} bridge={bridge} onClose={close} {...props} />,
+    (props) => <WritingPad store={store} bridge={bridge} onClose={close} onReveal={reveal} {...props} />,
   ))
   ctx.slots.inject('shell.overlay', () => ctx.slots.register(
     // ui-layout mounts details for blank sessions but forces its grid track to

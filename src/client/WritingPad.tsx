@@ -20,6 +20,7 @@ import {
   resolveRewriteInstruction,
   type WritingPadFeedbackKey,
 } from './locales.ts'
+import { latestWritingToolCallId } from './writing-tool-activation.ts'
 import './writing-pad.css'
 
 export interface WritingPadBridge {
@@ -36,6 +37,7 @@ export type WritingPadProps = PropsRuntime<'details'> & PropsLocale<typeof NS> &
   store: WritingPadStore
   bridge: WritingPadBridge
   onClose(sessionId: string): void
+  onReveal(sessionId: string): void
 }
 
 const MIN_TOOLS_HEIGHT = 164
@@ -45,7 +47,7 @@ const MAX_NOTE_HEIGHT = 310
 const INITIAL_PANEL_HEIGHTS: PanelHeights = { tools: 164, note: 54 }
 
 export function WritingPad(props: WritingPadProps) {
-  const { sessionId: sid, store, bridge, onClose, t } = props
+  const { sessionId: sid, store, bridge, onClose, onReveal, t } = props
   const [busy, setBusy] = useState(false)
   const [panelHeights, setPanelHeights] = useState(INITIAL_PANEL_HEIGHTS)
   const { note: noteHeight, tools: toolsHeight } = panelHeights
@@ -59,6 +61,11 @@ export function WritingPad(props: WritingPadProps) {
   const editBurst = useRef(false)
   const noteRef = useRef<HTMLTextAreaElement>(null)
   const padRef = useRef<HTMLDivElement>(null)
+  const reviewPreviewRef = useRef<HTMLDivElement>(null)
+  const seenWritingCall = useRef<{ sessionId: string; ids: Set<string> }>({
+    sessionId: sid,
+    ids: new Set(),
+  })
   const panelResizeStart = useRef<{ y: number; heights: PanelHeights } | null>(null)
 
   const showFeedback = useCallback((
@@ -150,6 +157,7 @@ export function WritingPad(props: WritingPadProps) {
       if (current.review?.id === res.review.id) return
       if (current.draft !== res.text) store.replaceDraft(sid, res.text)
       store.setEntry(sid, { review: res.review, mode: 'preview', status: 'saved' })
+      onReveal(sid)
       showFeedback('feedback.reviewReady', 'generated', true)
       return
     }
@@ -159,7 +167,34 @@ export function WritingPad(props: WritingPadProps) {
       remember: true,
       patch: { review: null, previewSel: '', selStart: 0, selEnd: 0, status: 'saved' },
     })
-  }, [applyReviewDecision, showFeedback, sid, store])
+  }, [applyReviewDecision, onReveal, showFeedback, sid, store])
+
+  const writingToolCallId = props.useSession(snapshot =>
+    latestWritingToolCallId(snapshot.runningCalls),
+  )
+
+  useEffect(() => {
+    if (seenWritingCall.current.sessionId !== sid) {
+      seenWritingCall.current = { sessionId: sid, ids: new Set() }
+    }
+    if (writingToolCallId === undefined || seenWritingCall.current.ids.has(writingToolCallId)) return
+    seenWritingCall.current.ids.add(writingToolCallId)
+    onReveal(sid)
+  }, [onReveal, sid, writingToolCallId])
+
+  useEffect(() => {
+    if (entry.review === null) return
+    const animationFrame = requestAnimationFrame(() => {
+      const preview = reviewPreviewRef.current
+      if (preview === null) return
+      const firstChange = preview.querySelector<HTMLElement>(
+        '.dsw-writing-pad-diff-delete, .dsw-writing-pad-diff-add',
+      )
+      if (firstChange === null) preview.scrollTop = 0
+      else firstChange.scrollIntoView({ block: 'center', inline: 'nearest' })
+    })
+    return () => cancelAnimationFrame(animationFrame)
+  }, [entry.review?.id])
 
   useEffect(() => {
     editBurst.current = false
@@ -472,7 +507,7 @@ export function WritingPad(props: WritingPadProps) {
 
       {entry.review !== null ? (
         <div className="dsw-writing-pad-review">
-          <div className="dsw-writing-pad-preview" dangerouslySetInnerHTML={{ __html: renderMarkdownDiff(entry.review.before, entry.review.after) }} />
+          <div ref={reviewPreviewRef} className="dsw-writing-pad-preview" dangerouslySetInnerHTML={{ __html: renderMarkdownDiff(entry.review.before, entry.review.after) }} />
         </div>
       ) : entry.mode === 'preview' ? (
         <div className="dsw-writing-pad-preview" dangerouslySetInnerHTML={{ __html: renderMarkdown(entry.draft) }} onPointerUp={capturePreviewSelection} />
