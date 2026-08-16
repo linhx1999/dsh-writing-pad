@@ -1,6 +1,11 @@
 # dsh-writing-pad
 
-[简体中文](README.md) · [English](README.en.md)
+[![npm version](https://img.shields.io/npm/v/dsh-writing-pad?logo=npm)](https://www.npmjs.com/package/dsh-writing-pad)
+[![npm downloads](https://img.shields.io/npm/dm/dsh-writing-pad?logo=npm)](https://www.npmjs.com/package/dsh-writing-pad)
+[![license](https://img.shields.io/npm/l/dsh-writing-pad)](LICENSE)
+
+[![简体中文文档](https://img.shields.io/badge/文档-简体中文-d73a49)](README.md)
+[![English documentation](https://img.shields.io/badge/docs-English-0969da)](README.en.md)
 
 面向 DeepSeek Harness Web 的会话级 Markdown 写作板。它直接停靠在对话右侧，让起草、预览和 AI 局部改写保持在同一个工作流中。
 

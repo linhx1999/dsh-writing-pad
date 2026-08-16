@@ -1,6 +1,11 @@
 # dsh-writing-pad
 
-[简体中文](README.md) · [English](README.en.md)
+[![npm version](https://img.shields.io/npm/v/dsh-writing-pad?logo=npm)](https://www.npmjs.com/package/dsh-writing-pad)
+[![npm downloads](https://img.shields.io/npm/dm/dsh-writing-pad?logo=npm)](https://www.npmjs.com/package/dsh-writing-pad)
+[![license](https://img.shields.io/npm/l/dsh-writing-pad)](LICENSE)
+
+[![简体中文文档](https://img.shields.io/badge/文档-简体中文-d73a49)](README.md)
+[![English documentation](https://img.shields.io/badge/docs-English-0969da)](README.en.md)
 
 A session-scoped Markdown writing pad for the DeepSeek Harness web GUI. It docks beside the conversation, keeping drafting, preview, and focused AI rewrites in one workflow.
 
