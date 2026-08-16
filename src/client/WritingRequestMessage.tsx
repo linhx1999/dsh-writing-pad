@@ -15,8 +15,8 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   formatWritingRequestDisplay,
-  parseDraftContextMessage,
   parseWritingRequest,
+  projectDraftContextMessage,
   type WritingRequest,
 } from '../draft-xml.ts'
 import { NS } from './locales.ts'
@@ -101,11 +101,22 @@ function formatClock(time: number): string {
 
 /** Shadows only the presentation of user rows; their durable content is untouched. */
 export function WritingRequestMessage({ node, loadImage, t, tPad }: Props) {
-  const { text, images, rest } = contentParts(node.data.content)
+  const isolatedContext = useMemo(() => {
+    const first = node.data.content[0]
+    if (first?.type !== 'text') return null
+    return projectDraftContextMessage(first.text) === '' ? true : null
+  }, [node.data.content])
+  const visibleContent = isolatedContext === null
+    ? node.data.content
+    : node.data.content.slice(1)
+  const { text, images, rest } = contentParts(visibleContent)
   const request = useMemo(() => parseWritingRequest(text), [text])
-  const draftContext = useMemo(() => parseDraftContextMessage(text), [text])
-  const visibleText = draftContext !== null
-    ? draftContext.message
+  const projectedContext = useMemo(
+    () => isolatedContext === null ? projectDraftContextMessage(text) : null,
+    [isolatedContext, text],
+  )
+  const visibleText = projectedContext !== null
+    ? projectedContext
     : request === null ? text : formatWritingRequestDisplay(request, {
         selection: tPad('message.selectionLabel'),
         instruction: tPad('message.instructionLabel'),

@@ -96,6 +96,12 @@ test('ordinary human messages carry a non-empty writing-pad draft', () => {
   assert.equal(injected?.source.kind, 'user')
   assert.deepEqual(injected?.content.slice(1), message.content)
   assert.equal(injected?.content.filter(block => block.type === 'image').length, 1)
+  const contextBlock = injected?.content[0]
+  assert.equal(contextBlock?.type, 'text')
+  assert.deepEqual(
+    parseDraftContextMessage(contextBlock?.type === 'text' ? contextBlock.text : ''),
+    { draft: '# 待修改正文', message: '' },
+  )
   const text = injected?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
   assert.deepEqual(parseDraftContextMessage(text ?? ''), {
     draft: '# 待修改正文',

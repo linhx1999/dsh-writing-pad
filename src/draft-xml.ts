@@ -4,12 +4,14 @@ import { REWRITE_SELECTED_TEXT_TOOL, WRITE_FULL_DRAFT_TOOL } from './writing-too
 
 const CDATA_END = ']]>'
 const CDATA_SPLIT = ']]]]><![CDATA[>'
-const SNAPSHOT_PATTERN = /<dsh-writing-pad version="1">\s*<draft><!\[CDATA\[([\s\S]*?)\]\]><\/draft>\s*<\/dsh-writing-pad>/
+const CONTEXT_OPEN = '<dsh-writing-pad-context version="1">'
+const CONTEXT_CLOSE = '</dsh-writing-pad-context>'
+const SNAPSHOT_PATTERN = /<dsh-writing-pad version="1">\s*<draft>\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*<\/draft>\s*<\/dsh-writing-pad>/
 const REQUEST_PATTERN = /^\s*<dsh-writing-pad-request\s+version="1"\s+operation="(write|rewrite)">([\s\S]*?)<\/dsh-writing-pad-request>\s*$/
 const CONTEXT_PATTERN = /^<dsh-writing-pad-context\s+version="1">([\s\S]*?)<\/dsh-writing-pad-context>(?:\n\n([\s\S]*))?$/
-const DRAFT_PATTERN = /<draft><!\[CDATA\[([\s\S]*?)\]\]><\/draft>/
-const INSTRUCTION_PATTERN = /<instruction><!\[CDATA\[([\s\S]*?)\]\]><\/instruction>/
-const SELECTION_PATTERN = /<selection\s+mode="(edit|preview)"(?:\s+start="(\d+)"\s+end="(\d+)")?><!\[CDATA\[([\s\S]*?)\]\]><\/selection>/
+const DRAFT_PATTERN = /<draft>\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*<\/draft>/
+const INSTRUCTION_PATTERN = /<instruction>\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*<\/instruction>/
+const SELECTION_PATTERN = /<selection\s+mode="(edit|preview)"(?:\s+start="(\d+)"\s+end="(\d+)")?>\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*<\/selection>/
 
 export type WritingRequestMode = 'edit' | 'preview'
 
@@ -50,11 +52,19 @@ function readCdata(text: string): string {
   return text.replaceAll(CDATA_SPLIT, CDATA_END)
 }
 
+function cdataElement(name: string, text: string, attributes = ''): string[] {
+  return [
+    `  <${name}${attributes}>`,
+    `    ${cdata(text)}`,
+    `  </${name}>`,
+  ]
+}
+
 /** Serialize one complete draft snapshot without changing its Markdown bytes. */
 export function serializeDraftSnapshot(draft: string): string {
   return [
     '<dsh-writing-pad version="1">',
-    `  <draft>${cdata(draft)}</draft>`,
+    ...cdataElement('draft', draft),
     '</dsh-writing-pad>',
   ].join('\n')
 }
@@ -69,7 +79,7 @@ export function parseDraftSnapshot(text: string): string | null {
 export function serializeDraftContextMessage(draft: string, message: string): string {
   const context = [
     '<dsh-writing-pad-context version="1">',
-    `  <draft>${cdata(draft)}</draft>`,
+    ...cdataElement('draft', draft),
     '</dsh-writing-pad-context>',
   ].join('\n')
   return message === '' ? context : `${context}\n\n${message}`
@@ -82,6 +92,22 @@ export function parseDraftContextMessage(text: string): DraftContextMessage | nu
   const draft = DRAFT_PATTERN.exec(context[1]!)
   if (draft === null) return null
   return { draft: readCdata(draft[1]!), message: context[2] ?? '' }
+}
+
+/** Hide a leading draft-context envelope without depending on its internal fields. */
+export function projectDraftContextMessage(text: string): string | null {
+  if (!text.startsWith(CONTEXT_OPEN)) return null
+  let cursor = CONTEXT_OPEN.length
+  while (cursor < text.length) {
+    const close = text.indexOf(CONTEXT_CLOSE, cursor)
+    if (close === -1) return null
+    const suffix = text.slice(close + CONTEXT_CLOSE.length)
+    if (suffix === '') return ''
+    if (suffix.startsWith('\n\n')) return suffix.slice(2)
+    if (suffix.startsWith('\r\n\r\n')) return suffix.slice(4)
+    cursor = close + CONTEXT_CLOSE.length
+  }
+  return null
 }
 
 /** Read the complete draft carried by either supported real user-message envelope. */
@@ -136,15 +162,15 @@ export function serializeWritingRequest(request: WritingRequest): string {
   const destination = request.operation === 'write' ? WRITE_FULL_DRAFT_TOOL : REWRITE_SELECTED_TEXT_TOOL
   const lines = [
     `<dsh-writing-pad-request version="1" operation="${request.operation}">`,
-    `  <draft>${cdata(request.draft)}</draft>`,
-    `  <instruction>${cdata(request.instruction)}</instruction>`,
+    ...cdataElement('draft', request.draft),
+    ...cdataElement('instruction', request.instruction),
   ]
   const selection = request.selection
   if (selection !== undefined) {
     const offsets = selection.start === undefined || selection.end === undefined
       ? ''
       : ` start="${selection.start}" end="${selection.end}"`
-    lines.push(`  <selection mode="${selection.mode}"${offsets}>${cdata(selection.text)}</selection>`)
+    lines.push(...cdataElement('selection', selection.text, ` mode="${selection.mode}"${offsets}`))
   }
   lines.push(
     `  <destination tool="${destination}" required="true" />`,

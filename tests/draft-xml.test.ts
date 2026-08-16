@@ -6,6 +6,7 @@ import {
   parseDraftSnapshot,
   parseWritingRequest,
   parseWritingPadMessageDraft,
+  projectDraftContextMessage,
   serializeDraftContextMessage,
   serializeDraftSnapshot,
   serializeWritingRequest,
@@ -15,15 +16,24 @@ test('draft snapshots round-trip arbitrary Markdown text', () => {
   const samples = [
     '',
     '# 标题\n\n正文 & <tag> 😀',
+    '\n保留首尾换行\n',
     'before ]]> after',
     'literal ]]]]><![CDATA[> marker',
   ]
   for (const sample of samples) {
     assert.equal(parseDraftSnapshot(serializeDraftSnapshot(sample)), sample)
   }
+  assert.match(
+    serializeDraftSnapshot('# 标题'),
+    /<draft>\n    <!\[CDATA\[# 标题\]\]>\n  <\/draft>/,
+  )
 })
 
 test('snapshot parser ignores unrelated and unsupported envelopes', () => {
+  assert.equal(
+    parseDraftSnapshot('<dsh-writing-pad version="1"><draft><![CDATA[旧版正文]]></draft></dsh-writing-pad>'),
+    '旧版正文',
+  )
   assert.equal(parseDraftSnapshot('<draft>text</draft>'), null)
   assert.equal(parseDraftSnapshot('<dsh-writing-pad version="2"><draft><![CDATA[text]]></draft></dsh-writing-pad>'), null)
 })
@@ -70,6 +80,8 @@ test('draft context keeps the conversation message separate from rewrite instruc
     message: '请整体润色，不要改变标题',
   })
   assert.equal(parseWritingPadMessageDraft(text), '# 待修改正文\n\n含 ]]> 标记')
+  assert.match(text, /<draft>\n    <!\[CDATA\[# 待修改正文/)
+  assert.match(text, /标记\]\]>\n  <\/draft>/)
   assert.match(text, /<\/dsh-writing-pad-context>\n\n请整体润色/)
   assert.doesNotMatch(text, /<instruction>/)
 })
@@ -78,6 +90,24 @@ test('draft context parser rejects unsupported or incomplete envelopes', () => {
   assert.equal(parseDraftContextMessage('<dsh-writing-pad-context version="2"></dsh-writing-pad-context>'), null)
   assert.equal(parseDraftContextMessage('<dsh-writing-pad-context version="1"></dsh-writing-pad-context>'), null)
   assert.equal(parseDraftContextMessage('普通用户消息'), null)
+})
+
+test('draft context projection always hides a recognized leading envelope', () => {
+  assert.equal(
+    projectDraftContextMessage([
+      '<dsh-writing-pad-context version="1">',
+      '  <unparseable>maintenance formatting must not leak</unparseable>',
+      '</dsh-writing-pad-context>',
+      '',
+      '用户输入保持原样',
+    ].join('\n')),
+    '用户输入保持原样',
+  )
+  assert.equal(
+    projectDraftContextMessage('<dsh-writing-pad-context version="1">broken</dsh-writing-pad-context>\n\n'),
+    '',
+  )
+  assert.equal(projectDraftContextMessage('普通用户消息'), null)
 })
 
 test('custom display labels omit the selection heading for full writes', () => {
@@ -101,6 +131,8 @@ test('full writes and selection rewrites route to different tools', () => {
 
   assert.match(write, /destination tool="write_full_draft" required="true"/)
   assert.match(rewrite, /destination tool="rewrite_selected_text" required="true"/)
+  assert.match(rewrite, /<instruction>\n    <!\[CDATA\[改写\]\]>\n  <\/instruction>/)
+  assert.match(rewrite, /<selection mode="edit" start="0" end="2">\n    <!\[CDATA\[原文\]\]>\n  <\/selection>/)
 })
 
 test('writing request parser rejects unrelated and unsupported envelopes', () => {

@@ -68,6 +68,7 @@ The writing pad's client controls, status feedback, and writing-request summarie
 
 - Edits are debounced into the current Host process's memory.
 - While the writing pad is non-empty, every real user message from the main composer carries a separate complete-draft context, with the user's original text outside that context. Selection rewrites retain their own additional-instruction field and also carry the full draft. Both paths produce one user message whose full draft stays hidden in the UI.
+- Draft, additional-instruction, and selection elements use a multiline XML layout for readable transcript inspection without changing the original CDATA text.
 - After a restart, the plugin recovers the latest accepted draft and pending writing-tool candidate; legacy `writing_draft` events remain recoverable, and this browser replays stored review decisions.
 - Manual edits that have not travelled with any user message do not survive a Host-process restart.
 
