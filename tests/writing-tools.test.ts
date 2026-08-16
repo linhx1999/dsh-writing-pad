@@ -12,9 +12,18 @@ test('the two tool names make their document scope explicit', () => {
   assert.equal(REWRITE_SELECTED_TEXT_TOOL, 'rewrite_selected_text')
 })
 
-test('full-draft writes exclude selection rewrites', () => {
+test('full-draft writes proactively handle concrete writing requests', () => {
+  assert.match(WRITE_FULL_DRAFT_DESCRIPTION, /只要用户表达要写.+就应积极且优先调用本工具/)
+  assert.match(WRITE_FULL_DRAFT_DESCRIPTION, /无需用户提到“写作板”、工具名或 XML/)
+  assert.match(WRITE_FULL_DRAFT_DESCRIPTION, /文章、故事、文案、邮件、报告/)
+  assert.match(WRITE_FULL_DRAFT_DESCRIPTION, /不要因为缺少次要细节而放弃调用/)
+  assert.match(WRITE_FULL_DRAFT_DESCRIPTION, /不要把成稿只放在普通 assistant 回复中/)
+})
+
+test('full-draft writes exclude selection rewrites and writing-only discussion', () => {
   assert.match(WRITE_FULL_DRAFT_DESCRIPTION, /包含 selection.+禁止调用本工具/)
   assert.match(WRITE_FULL_DRAFT_DESCRIPTION, /rewrite_selected_text/)
+  assert.match(WRITE_FULL_DRAFT_DESCRIPTION, /只是询问写作方法、分析或评价.+则不调用/)
 })
 
 test('selection rewrites constrain both arguments to the selected fragment', () => {

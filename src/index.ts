@@ -132,7 +132,7 @@ export class WritingPadService extends TypertRemoteService {
       name: WRITE_FULL_DRAFT_TOOL,
       description: WRITE_FULL_DRAFT_DESCRIPTION,
       parameters: {
-        content: { type: 'string', required: true, description: '要放入写作板的完整 Markdown 正文' },
+        content: { type: 'string', required: true, description: '根据用户写作请求生成的、可直接使用的完整 Markdown 成稿' },
       },
       output: writingToolOutput(),
       execute: async (args, exec) => {

@@ -10,7 +10,7 @@ A session-scoped Markdown writing pad for the DeepSeek Harness web GUI. It docks
 
 - **Open it anytime:** open or close the writing pad from the composer toolbar and keep it open while switching sessions.
 - **Focused rewrites:** select text, enter multi-line instructions, save reusable defaults, and resize the instruction area.
-- **Review before apply:** the full-document `write_full_draft` tool or selection-only `rewrite_selected_text` tool produces a Diff candidate that can be accepted or rejected and is accepted by default when leaving review.
+- **Proactive writing-pad delivery:** when users ask to draft, write, continue, or generate usable text, the model prioritizes `write_full_draft` for a complete candidate; selection edits use `rewrite_selected_text`. Both produce a reviewable Diff.
 - **Visible state:** the UI reports saving, copying, generation, pending review, and failure states.
 - **Clean conversations:** the complete draft reaches the model, while the visible message bubble shows only the selected passage and additional instruction.
 - **Session-scoped state:** drafts remain isolated by session, with edit/preview modes, full-draft copy, clear, and up to 50 undo steps.
