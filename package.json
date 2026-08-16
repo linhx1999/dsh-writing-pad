@@ -38,6 +38,7 @@
       "platform": "web",
       "inject": [
         "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-api-remotes",
         "@deepseek-ai/dsh-client-ui-layout",
         "@deepseek-ai/dsh-client-ui-conversation",
@@ -54,6 +55,7 @@
     "@deepseek-ai/dsh-tools": ">=0.1.0-rc.5",
     "@deepseek-ai/dsh-typert-protocol": ">=0.1.0-rc.5",
     "@deepseek-ai/dsh-client-runtime": ">=0.1.0-rc.5",
+    "@deepseek-ai/dsh-client-locale": ">=0.1.0-rc.5",
     "@deepseek-ai/dsh-api-remotes": ">=0.1.0-rc.5",
     "@deepseek-ai/dsh-client-ui-conversation": ">=0.1.0-rc.5",
     "@deepseek-ai/dsh-client-ui-attachment": ">=0.1.0-rc.5",

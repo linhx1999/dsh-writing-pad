@@ -26,6 +26,16 @@ export interface WritingRequest {
   selection?: WritingSelection
 }
 
+export interface WritingRequestDisplayLabels {
+  selection: string
+  instruction: string
+}
+
+const DEFAULT_DISPLAY_LABELS: WritingRequestDisplayLabels = {
+  selection: '修改内容',
+  instruction: '额外要求',
+}
+
 function cdata(text: string): string {
   return `<![CDATA[${text.replaceAll(CDATA_END, CDATA_SPLIT)}]]>`
 }
@@ -85,11 +95,14 @@ export function parseWritingRequest(text: string): WritingRequest | null {
 }
 
 /** Plain-text transcript/copy projection that deliberately excludes the draft. */
-export function formatWritingRequestDisplay(request: WritingRequest): string {
+export function formatWritingRequestDisplay(
+  request: WritingRequest,
+  labels: WritingRequestDisplayLabels = DEFAULT_DISPLAY_LABELS,
+): string {
   const selection = request.selection?.text.trim()
   return [
-    selection === undefined || selection === '' ? '' : `修改内容\n${selection}`,
-    `额外要求\n${request.instruction}`,
+    selection === undefined || selection === '' ? '' : `${labels.selection}\n${selection}`,
+    `${labels.instruction}\n${request.instruction}`,
   ].filter(Boolean).join('\n\n')
 }
 

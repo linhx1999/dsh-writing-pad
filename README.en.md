@@ -12,6 +12,7 @@ A session-scoped Markdown writing pad for the DeepSeek Harness web GUI. It docks
 - **Focused rewrites:** select text, enter multi-line instructions, save reusable defaults, and resize the instruction area.
 - **Proactive writing-pad delivery:** when users ask to draft, write, continue, or generate usable text, the model prioritizes `write_full_draft` for a complete candidate; selection edits use `rewrite_selected_text`. Both produce a reviewable Diff.
 - **Visible state:** the UI reports saving, copying, generation, pending review, and failure states.
+- **Host-synchronized language:** client UI copy switches immediately with dsh's 中文/English setting.
 - **Clean conversations:** the complete draft reaches the model, while the visible message bubble shows only the selected passage and additional instruction.
 - **Session-scoped state:** drafts remain isolated by session, with edit/preview modes, full-draft copy, clear, and up to 50 undo steps.
 - **No workspace writes:** drafts are staged in Host memory and never create or overwrite project files automatically.
@@ -53,6 +54,10 @@ The prepublish hook runs type checks, tests, and package verification before pub
 3. Select the passage to change; focus moves to the additional-instruction editor.
 4. Enter instructions. Press Enter to send or Shift+Enter for a new line, and optionally save the text as your default.
 5. Review the highlighted Diff and accept or reject it. Leaving review without choosing accepts the candidate by default.
+
+## Language
+
+The writing pad's client controls, status feedback, and writing-request summaries follow the dsh Host language setting (中文/English). When additional instructions are empty, the plugin chooses the default rewrite instruction in the active UI language at send time and includes it in the request. User-saved default instructions always retain their original text. Host tool descriptions, tool-result markers, the XML wire format, and replay parsing retain their existing Chinese conventions and do not change with the UI language.
 
 ## Data and recovery
 

@@ -1,5 +1,7 @@
 /** Shared writing-pad state across the two registered slots (one instance per apply). */
 
+import type { WritingPadFeedbackKey } from './locales.ts'
+
 export interface DraftReview {
   id: string
   before: string
@@ -10,7 +12,8 @@ export type FeedbackTone = 'info' | 'success' | 'generated' | 'warning' | 'error
 
 export interface WritingPadFeedback {
   id: number
-  text: string
+  key: WritingPadFeedbackKey
+  message?: string
   tone: FeedbackTone
   persistent: boolean
 }

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import { ImageGallery } from '@deepseek-ai/dsh-client-ui-attachment'
 import type { ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   IconCheckOutline16,
   IconCopyOutline16,
@@ -17,8 +18,11 @@ import {
   parseWritingRequest,
   type WritingRequest,
 } from '../draft-xml.ts'
+import { NS } from './locales.ts'
 
-type Props = ChatNodeViewProps<'user' | 'steering'>
+type Props = ChatNodeViewProps<'user' | 'steering'> & {
+  tPad: TranslateNS<typeof NS>
+}
 type ImageBlock = Extract<ContentBlock, { type: 'image' }>
 
 function contentParts(content: readonly ContentBlock[]): {
@@ -37,18 +41,24 @@ function contentParts(content: readonly ContentBlock[]): {
   return { text: text.join(''), images, rest }
 }
 
-function RequestSummary({ request }: { request: WritingRequest }) {
+function RequestSummary({
+  request,
+  tPad,
+}: {
+  request: WritingRequest
+  tPad: TranslateNS<typeof NS>
+}) {
   const selection = request.selection?.text.trim()
   return (
     <div className="dsw-writing-message-request" data-writing-request={request.operation}>
       {selection !== undefined && selection !== '' && (
         <section className="dsw-writing-message-section">
-          <span className="dsw-writing-message-label">修改内容</span>
+          <span className="dsw-writing-message-label">{tPad('message.selectionLabel')}</span>
           <span className="dsw-writing-message-selection">{selection}</span>
         </section>
       )}
       <section className="dsw-writing-message-section">
-        <span className="dsw-writing-message-label">额外要求</span>
+        <span className="dsw-writing-message-label">{tPad('message.instructionLabel')}</span>
         <span className="dsw-writing-message-instruction">{request.instruction}</span>
       </section>
     </div>
@@ -89,10 +99,15 @@ function formatClock(time: number): string {
 }
 
 /** Shadows only the presentation of user rows; their durable content is untouched. */
-export function WritingRequestMessage({ node, loadImage, t }: Props) {
+export function WritingRequestMessage({ node, loadImage, t, tPad }: Props) {
   const { text, images, rest } = contentParts(node.data.content)
   const request = useMemo(() => parseWritingRequest(text), [text])
-  const visibleText = request === null ? text : formatWritingRequestDisplay(request)
+  const visibleText = request === null
+    ? text
+    : formatWritingRequestDisplay(request, {
+        selection: tPad('message.selectionLabel'),
+        instruction: tPad('message.instructionLabel'),
+      })
   const [copied, setCopied] = useState(false)
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -129,7 +144,7 @@ export function WritingRequestMessage({ node, loadImage, t }: Props) {
         />
         {(visibleText !== '' || rest.length > 0) && (
           <div className="dsw-writing-message-bubble">
-            {request === null ? <UserText text={text} /> : <RequestSummary request={request} />}
+            {request === null ? <UserText text={text} /> : <RequestSummary request={request} tPad={tPad} />}
             {rest.map((block, index) => (
               <JsonBlock key={index} label={t('message.extraBlock')} payload={block} />
             ))}
@@ -138,11 +153,11 @@ export function WritingRequestMessage({ node, loadImage, t }: Props) {
       </div>
       <div className="dsw-writing-message-actions">
         <span className="dsw-writing-message-time">{formatClock(node.data.time)}</span>
-        <Tooltip label={copied ? '已复制' : '复制'} side="bottom">
+        <Tooltip label={copied ? tPad('message.copied') : tPad('message.copy')} side="bottom">
           <button
             type="button"
             className="dsw-writing-message-action"
-            aria-label={copied ? '已复制' : '复制'}
+            aria-label={copied ? tPad('message.copied') : tPad('message.copy')}
             onClick={() => void copy()}
           >
             {copied ? <IconCheckOutline16 /> : <IconCopyOutline16 />}

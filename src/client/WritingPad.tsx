@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
-import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { serializeWritingRequest, type WritingSelection } from '../draft-xml.ts'
 import { renderMarkdown, renderMarkdownDiff } from './markdown.ts'
 import { resizePanelHeights, type PanelHeights } from './panel-resize.ts'
@@ -14,6 +14,12 @@ import {
   type ReviewDecision,
 } from './preferences.ts'
 import type { DraftReview, FeedbackTone, WritingPadStore } from './store.ts'
+import {
+  formatFeedback,
+  NS,
+  resolveRewriteInstruction,
+  type WritingPadFeedbackKey,
+} from './locales.ts'
 import './writing-pad.css'
 
 export interface WritingPadBridge {
@@ -26,13 +32,12 @@ export interface WritingPadBridge {
   ): Promise<{ ok: boolean; error: string; text: string }>
 }
 
-export type WritingPadProps = PropsRuntime<'details'> & {
+export type WritingPadProps = PropsRuntime<'details'> & PropsLocale<typeof NS> & {
   store: WritingPadStore
   bridge: WritingPadBridge
   onClose(sessionId: string): void
 }
 
-const DEFAULT_REWRITE_INSTRUCTION = '保持原意，改善表达，使文字更清晰流畅。'
 const MIN_TOOLS_HEIGHT = 164
 const MAX_TOOLS_HEIGHT = 420
 const MIN_NOTE_HEIGHT = 54
@@ -40,7 +45,7 @@ const MAX_NOTE_HEIGHT = 310
 const INITIAL_PANEL_HEIGHTS: PanelHeights = { tools: 164, note: 54 }
 
 export function WritingPad(props: WritingPadProps) {
-  const { sessionId: sid, store, bridge, onClose } = props
+  const { sessionId: sid, store, bridge, onClose, t } = props
   const [busy, setBusy] = useState(false)
   const [panelHeights, setPanelHeights] = useState(INITIAL_PANEL_HEIGHTS)
   const { note: noteHeight, tools: toolsHeight } = panelHeights
@@ -56,10 +61,15 @@ export function WritingPad(props: WritingPadProps) {
   const padRef = useRef<HTMLDivElement>(null)
   const panelResizeStart = useRef<{ y: number; heights: PanelHeights } | null>(null)
 
-  const showFeedback = useCallback((text: string, tone: FeedbackTone, persistent = false): void => {
+  const showFeedback = useCallback((
+    key: WritingPadFeedbackKey,
+    tone: FeedbackTone,
+    persistent = false,
+    message?: string,
+  ): void => {
     if (feedbackTimer.current !== null) clearTimeout(feedbackTimer.current)
     const id = ++feedbackId.current
-    store.setEntry(sid, { feedback: { id, text, tone, persistent } })
+    store.setEntry(sid, { feedback: { id, key, tone, persistent, message } })
     if (!persistent) {
       feedbackTimer.current = setTimeout(() => {
         feedbackTimer.current = null
@@ -80,7 +90,8 @@ export function WritingPad(props: WritingPadProps) {
     try {
       const result = await bridge.resolveReview(sid, review.id, decision)
       if (!result.ok) {
-        showFeedback(result.error || '审核失败', 'error', true)
+        if (result.error === '') showFeedback('feedback.reviewFailed', 'error', true)
+        else showFeedback('feedback.rawError', 'error', true, result.error)
         return false
       }
       const persisted = saveReviewDecision(sid, { reviewId: review.id, decision })
@@ -96,18 +107,28 @@ export function WritingPad(props: WritingPadProps) {
         },
       })
       latestEntry.current = store.entryOf(sid)
-      const label = decision === 'accept'
-        ? automatic ? '已默认接受 AI 修改' : '已接受 AI 修改'
-        : '已拒绝 AI 修改'
+      const key: WritingPadFeedbackKey = persisted
+        ? decision === 'accept'
+          ? automatic ? 'feedback.acceptedAutomatic' : 'feedback.accepted'
+          : 'feedback.rejected'
+        : decision === 'accept'
+          ? automatic
+            ? 'feedback.acceptedAutomaticPersistFailed'
+            : 'feedback.acceptedPersistFailed'
+          : 'feedback.rejectedPersistFailed'
       showFeedback(
-        persisted ? label : `${label}；审核记录未能持久保存`,
+        key,
         persisted ? decision === 'accept' ? 'success' : 'warning' : 'error',
         !persisted,
       )
       return true
     } catch (error) {
-      const message = error instanceof Error ? error.message : '未知错误'
-      showFeedback(`审核失败：${message}`, 'error', true)
+      showFeedback(
+        'feedback.reviewFailedDetail',
+        'error',
+        true,
+        error instanceof Error ? error.message : undefined,
+      )
       return false
     } finally {
       resolvingReview.current = null
@@ -129,7 +150,7 @@ export function WritingPad(props: WritingPadProps) {
       if (current.review?.id === res.review.id) return
       if (current.draft !== res.text) store.replaceDraft(sid, res.text)
       store.setEntry(sid, { review: res.review, mode: 'preview', status: 'saved' })
-      showFeedback('AI 已生成，请审核修改', 'generated', true)
+      showFeedback('feedback.reviewReady', 'generated', true)
       return
     }
     const current = store.entryOf(sid)
@@ -178,7 +199,7 @@ export function WritingPad(props: WritingPadProps) {
   const handleDraftChange = (text: string): void => {
     if (text === store.entryOf(sid).draft) return
     store.replaceDraft(sid, text, { remember: !editBurst.current, patch: { status: 'saving' } })
-    showFeedback('暂存中…', 'info', true)
+    showFeedback('feedback.saving', 'info', true)
     editBurst.current = true
     if (saveTimer.current !== null) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => {
@@ -187,12 +208,17 @@ export function WritingPad(props: WritingPadProps) {
       bridge.saveDraft(sid, text).then(() => {
         if (store.entryOf(sid).draft === text) {
           store.setEntry(sid, { status: 'saved' })
-          showFeedback('已暂存', 'success')
+          showFeedback('feedback.saved', 'success')
         }
       }).catch((error: unknown) => {
         if (store.entryOf(sid).draft === text) {
           store.setEntry(sid, { status: 'error' })
-          showFeedback(`暂存失败：${error instanceof Error ? error.message : '未知错误'}`, 'error', true)
+          showFeedback(
+            'feedback.saveFailed',
+            'error',
+            true,
+            error instanceof Error ? error.message : undefined,
+          )
         }
       })
     }, 800)
@@ -208,7 +234,12 @@ export function WritingPad(props: WritingPadProps) {
       store.setEntry(sid, { status: 'saved' })
       onClose(sid)
     } catch (error) {
-      showFeedback(`关闭前暂存失败：${error instanceof Error ? error.message : '未知错误'}`, 'error', true)
+      showFeedback(
+        'feedback.closeSaveFailed',
+        'error',
+        true,
+        error instanceof Error ? error.message : undefined,
+      )
     } finally {
       setBusy(false)
     }
@@ -229,15 +260,14 @@ export function WritingPad(props: WritingPadProps) {
     if (entry.review !== null && !await applyReviewDecision('accept', true)) return
     const selection = selectedText()
     if (selection === undefined) {
-      showFeedback('请先在正文中选择要修改的内容', 'warning')
+      showFeedback('feedback.selectRequired', 'warning')
       return
     }
     if (props.inputActions === undefined) {
-      showFeedback('当前会话不支持发送写作请求', 'error', true)
+      showFeedback('feedback.sendUnsupported', 'error', true)
       return
     }
-    const note = entry.rewriteNote.trim()
-    const instruction = note === '' ? DEFAULT_REWRITE_INSTRUCTION : note
+    const instruction = resolveRewriteInstruction(entry.rewriteNote, t)
     setBusy(true)
     try {
       cancelPendingSave()
@@ -251,9 +281,14 @@ export function WritingPad(props: WritingPadProps) {
         rewriteNote: store.defaultRewriteNote(),
         status: 'saved',
       })
-      showFeedback('改写请求已发送', 'info')
+      showFeedback('feedback.requestSent', 'info')
     } catch (error) {
-      showFeedback(`请求发送失败：${error instanceof Error ? error.message : '未知错误'}`, 'error', true)
+      showFeedback(
+        'feedback.requestFailed',
+        'error',
+        true,
+        error instanceof Error ? error.message : undefined,
+      )
     } finally {
       setBusy(false)
     }
@@ -268,9 +303,14 @@ export function WritingPad(props: WritingPadProps) {
     try {
       await bridge.saveDraft(sid, previous)
       store.setEntry(sid, { status: 'saved' })
-      showFeedback('已撤销上一次修改', 'success')
+      showFeedback('feedback.undone', 'success')
     } catch (error) {
-      showFeedback(`撤销已在本地生效，但暂存失败：${error instanceof Error ? error.message : '未知错误'}`, 'error', true)
+      showFeedback(
+        'feedback.undoSaveFailed',
+        'error',
+        true,
+        error instanceof Error ? error.message : undefined,
+      )
     } finally {
       setBusy(false)
     }
@@ -287,9 +327,14 @@ export function WritingPad(props: WritingPadProps) {
     try {
       await bridge.saveDraft(sid, '')
       store.setEntry(sid, { status: 'saved' })
-      showFeedback('草稿已清空，可点击撤销恢复', 'warning')
+      showFeedback('feedback.cleared', 'warning')
     } catch (error) {
-      showFeedback(`草稿已在本地清空，但暂存失败：${error instanceof Error ? error.message : '未知错误'}`, 'error', true)
+      showFeedback(
+        'feedback.clearSaveFailed',
+        'error',
+        true,
+        error instanceof Error ? error.message : undefined,
+      )
     } finally {
       setBusy(false)
     }
@@ -299,9 +344,14 @@ export function WritingPad(props: WritingPadProps) {
     if (busy || entry.draft === '') return
     try {
       await navigator.clipboard.writeText(entry.draft)
-      showFeedback('已复制全部草稿', 'success')
+      showFeedback('feedback.copiedDraft', 'success')
     } catch (error) {
-      showFeedback(`复制失败：${error instanceof Error ? error.message : '未知错误'}`, 'error', true)
+      showFeedback(
+        'feedback.copyFailed',
+        'error',
+        true,
+        error instanceof Error ? error.message : undefined,
+      )
     }
   }
 
@@ -333,19 +383,19 @@ export function WritingPad(props: WritingPadProps) {
 
   const handleSaveDefault = (): void => {
     const note = entry.rewriteNote.trim()
-    if (note === '') return showFeedback('请先输入要保存的默认要求', 'warning')
-    if (!saveDefaultRewriteNote(note)) return showFeedback('默认要求保存失败', 'error', true)
+    if (note === '') return showFeedback('feedback.defaultRequired', 'warning')
+    if (!saveDefaultRewriteNote(note)) return showFeedback('feedback.defaultSaveFailed', 'error', true)
     store.setDefaultRewriteNote(note)
     store.setEntry(sid, { rewriteNote: note })
-    showFeedback('已设为默认要求', 'success')
+    showFeedback('feedback.defaultSaved', 'success')
   }
 
   const handleClearDefault = (): void => {
-    if (!saveDefaultRewriteNote('')) return showFeedback('默认要求清除失败', 'error', true)
+    if (!saveDefaultRewriteNote('')) return showFeedback('feedback.defaultClearFailed', 'error', true)
     const currentNote = entry.rewriteNote
     store.setDefaultRewriteNote('')
     store.setEntry(sid, { rewriteNote: currentNote })
-    showFeedback('已清除默认要求', 'success')
+    showFeedback('feedback.defaultCleared', 'success')
   }
 
   const panelHeightBounds = (): {
@@ -402,20 +452,22 @@ export function WritingPad(props: WritingPadProps) {
   const chars = entry.draft.replace(/\s+/g, '').length
   const words = entry.draft.trim() === '' ? 0 : entry.draft.trim().split(/\s+/).length
   const hint = isRewrite
-    ? `已选中：${selection.text.trim().slice(0, 16)}${selection.text.trim().length > 16 ? '…' : ''}`
+    ? t('hint.selected', {
+        text: `${selection.text.trim().slice(0, 16)}${selection.text.trim().length > 16 ? '…' : ''}`,
+      })
     : entry.review !== null
-      ? '请先确认或拒绝本次 AI 修改'
-      : entry.draft === '' ? '先输入或粘贴正文，再选择要修改的内容' : '请选择要修改的文字'
+      ? t('hint.reviewPending')
+      : entry.draft === '' ? t('hint.emptyDraft') : t('hint.selectText')
 
   return (
     <div ref={padRef} className="dsw-writing-pad">
       <div className="dsw-writing-pad-head">
-        <span className="dsw-writing-pad-title">写作板</span>
+        <span className="dsw-writing-pad-title">{t('title.pad')}</span>
         <div className="dsw-writing-pad-modes">
-          <button type="button" disabled={busy} className={'dsw-writing-pad-mode' + (entry.mode === 'edit' ? ' is-active' : '')} onClick={() => void handleMode('edit')}>编辑</button>
-          <button type="button" disabled={busy} className={'dsw-writing-pad-mode' + (entry.mode === 'preview' ? ' is-active' : '')} onClick={() => void handleMode('preview')}>预览</button>
+          <button type="button" disabled={busy} className={'dsw-writing-pad-mode' + (entry.mode === 'edit' ? ' is-active' : '')} onClick={() => void handleMode('edit')}>{t('mode.edit')}</button>
+          <button type="button" disabled={busy} className={'dsw-writing-pad-mode' + (entry.mode === 'preview' ? ' is-active' : '')} onClick={() => void handleMode('preview')}>{t('mode.preview')}</button>
         </div>
-        <button type="button" className="dsw-writing-pad-close" disabled={busy} onClick={() => void handleClose()}>✕</button>
+        <button type="button" className="dsw-writing-pad-close" aria-label={t('aria.close')} disabled={busy} onClick={() => void handleClose()}>✕</button>
       </div>
 
       {entry.review !== null ? (
@@ -428,7 +480,7 @@ export function WritingPad(props: WritingPadProps) {
         <textarea
           className="dsw-writing-pad-area"
           value={entry.draft}
-          placeholder="在这里开始写作… 支持 Markdown 纯文本。"
+          placeholder={t('editor.placeholder')}
           autoFocus
           spellCheck={false}
           onChange={(event) => handleDraftChange(event.target.value)}
@@ -442,7 +494,7 @@ export function WritingPad(props: WritingPadProps) {
         <div
           className="dsw-writing-pad-tools-resize"
           role="separator"
-          aria-label="调整底部功能区高度"
+          aria-label={t('aria.resizeTools')}
           aria-orientation="horizontal"
           aria-valuemin={MIN_TOOLS_HEIGHT}
           aria-valuemax={MAX_TOOLS_HEIGHT}
@@ -459,7 +511,7 @@ export function WritingPad(props: WritingPadProps) {
           <div
             className="dsw-writing-pad-note-resize"
             role="separator"
-            aria-label="调整额外要求输入区高度"
+            aria-label={t('aria.resizeNote')}
             aria-orientation="horizontal"
             aria-valuemin={MIN_NOTE_HEIGHT}
             aria-valuemax={MAX_NOTE_HEIGHT}
@@ -475,7 +527,7 @@ export function WritingPad(props: WritingPadProps) {
             ref={noteRef}
             className="dsw-writing-pad-note-input"
             value={entry.rewriteNote}
-            placeholder={store.defaultRewriteNote() || DEFAULT_REWRITE_INSTRUCTION}
+            placeholder={store.defaultRewriteNote() || t('note.defaultInstruction')}
             spellCheck={false}
             disabled={entry.review !== null}
             onChange={(event) => store.setEntry(sid, { rewriteNote: event.target.value })}
@@ -499,19 +551,19 @@ export function WritingPad(props: WritingPadProps) {
                 className={`dsw-writing-pad-feedback is-${entry.feedback.tone}`}
                 role={entry.feedback.tone === 'error' ? 'alert' : 'status'}
                 aria-live={entry.feedback.tone === 'error' ? 'assertive' : 'polite'}
-              >{entry.feedback.text}</span>
+              >{formatFeedback(t, entry.feedback)}</span>
             )}
           </div>
           {entry.review !== null ? (
             <div className="dsw-writing-pad-review-actions">
-              <button type="button" disabled={busy} className="dsw-writing-pad-review-reject" onClick={() => void applyReviewDecision('reject')}>拒绝修改</button>
-              <button type="button" disabled={busy} className="dsw-writing-pad-review-accept" onClick={() => void applyReviewDecision('accept')}>接受修改</button>
+              <button type="button" disabled={busy} className="dsw-writing-pad-review-reject" onClick={() => void applyReviewDecision('reject')}>{t('review.reject')}</button>
+              <button type="button" disabled={busy} className="dsw-writing-pad-review-accept" onClick={() => void applyReviewDecision('accept')}>{t('review.accept')}</button>
             </div>
           ) : (
             <>
               <div className="dsw-writing-pad-default-actions">
-                <button type="button" disabled={busy || entry.rewriteNote.trim() === '' || entry.rewriteNote.trim() === store.defaultRewriteNote()} onClick={handleSaveDefault}>设为默认</button>
-                {store.defaultRewriteNote() !== '' && <button type="button" disabled={busy} onClick={handleClearDefault}>清除默认</button>}
+                <button type="button" disabled={busy || entry.rewriteNote.trim() === '' || entry.rewriteNote.trim() === store.defaultRewriteNote()} onClick={handleSaveDefault}>{t('defaultNote.set')}</button>
+                {store.defaultRewriteNote() !== '' && <button type="button" disabled={busy} onClick={handleClearDefault}>{t('defaultNote.clear')}</button>}
               </div>
               <button
                 type="button"
@@ -519,17 +571,17 @@ export function WritingPad(props: WritingPadProps) {
                 disabled={busy || !isRewrite}
                 onClick={() => void handleWritingRequest()}
               >
-                {busy ? '处理中…' : '发送'}
+                {busy ? t('action.busy') : t('action.send')}
               </button>
             </>
           )}
         </div>
         <div className="dsw-writing-pad-foot">
-          <span>{chars} 字 · {words} 词</span>
+          <span>{t('foot.count', { chars, words })}</span>
           <div className="dsw-writing-pad-foot-actions">
-            <button type="button" className="dsw-writing-pad-copy" disabled={busy || entry.draft === ''} onClick={() => void handleCopy()}>复制</button>
-            <button type="button" className="dsw-writing-pad-undo" disabled={busy || entry.undoStack.length === 0 || entry.review !== null} onClick={() => void handleUndo()}>撤销</button>
-            <button type="button" className="dsw-writing-pad-clear" disabled={busy || entry.draft === '' || entry.review !== null} onClick={() => void handleClear()}>清空</button>
+            <button type="button" className="dsw-writing-pad-copy" disabled={busy || entry.draft === ''} onClick={() => void handleCopy()}>{t('action.copy')}</button>
+            <button type="button" className="dsw-writing-pad-undo" disabled={busy || entry.undoStack.length === 0 || entry.review !== null} onClick={() => void handleUndo()}>{t('action.undo')}</button>
+            <button type="button" className="dsw-writing-pad-clear" disabled={busy || entry.draft === '' || entry.review !== null} onClick={() => void handleClear()}>{t('action.clear')}</button>
           </div>
         </div>
       </div>

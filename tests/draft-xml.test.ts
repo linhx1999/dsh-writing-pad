@@ -49,6 +49,26 @@ test('writing requests declare the operation, destination and selection', () => 
   const display = formatWritingRequestDisplay(parsed)
   assert.equal(display, '修改内容\n原文\n\n额外要求\n更简洁 ]]> 一些')
   assert.doesNotMatch(display, /当前草稿/)
+
+  const englishDisplay = formatWritingRequestDisplay(parsed, {
+    selection: 'Selected passage',
+    instruction: 'Additional instructions',
+  })
+  assert.equal(
+    englishDisplay,
+    'Selected passage\n原文\n\nAdditional instructions\n更简洁 ]]> 一些',
+  )
+  assert.doesNotMatch(englishDisplay, /当前草稿/)
+})
+
+test('custom display labels omit the selection heading for full writes', () => {
+  assert.equal(
+    formatWritingRequestDisplay(
+      { operation: 'write', draft: 'hidden', instruction: 'Draft an introduction' },
+      { selection: 'Selected passage', instruction: 'Additional instructions' },
+    ),
+    'Additional instructions\nDraft an introduction',
+  )
 })
 
 test('full writes and selection rewrites route to different tools', () => {
