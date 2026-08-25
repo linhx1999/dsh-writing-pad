@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
-import { ImageGallery } from '@deepseek-ai/dsh-client-ui-attachment'
 import type { ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import {
@@ -100,7 +99,7 @@ function formatClock(time: number): string {
 }
 
 /** Shadows only the presentation of user rows; their durable content is untouched. */
-export function WritingRequestMessage({ node, loadImage, t, tPad }: Props) {
+export function WritingRequestMessage({ node, renderMessageImages, t, tPad }: Props) {
   const isolatedContext = useMemo(() => {
     const first = node.data.content[0]
     if (first?.type !== 'text') return null
@@ -142,19 +141,7 @@ export function WritingRequestMessage({ node, loadImage, t, tPad }: Props) {
   return (
     <div className="dsw-writing-message-row" data-time-hover-root>
       <div className="dsw-writing-message-stack">
-        <ImageGallery
-          images={images}
-          load={loadImage}
-          align="end"
-          labels={{
-            image: t('image.label'),
-            open: t('image.openOriginal'),
-            openNamed: label => t('image.openOriginalLabel', { label }),
-            loading: t('image.loading'),
-            loadFailed: t('image.loadFailed'),
-            lightbox: { dialog: t('image.preview'), close: t('image.closePreview') },
-          }}
-        />
+        {renderMessageImages({ images, align: 'end' })}
         {(visibleText !== '' || rest.length > 0) && (
           <div className="dsw-writing-message-bubble">
             {request === null
