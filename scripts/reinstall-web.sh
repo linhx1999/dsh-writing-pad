@@ -9,6 +9,6 @@ package_version="$(node --input-type=module -e "import pkg from './package.json'
 tarball="./${package_name}-${package_version}.tgz"
 
 pnpm pack
-dsh plugin --profile web remove "$package_name"
-dsh plugin --profile web add "$tarball"
-exec dsh web
+pnpm dlx @deepseek-ai/dsh@latest plugin --profile web remove "$package_name"
+pnpm dlx @deepseek-ai/dsh@latest plugin --profile web add "$tarball"
+exec pnpm dlx @deepseek-ai/dsh@latest web

@@ -36,7 +36,7 @@ dsh plugin --profile web add dsh-writing-pad
 dsh web
 ```
 
-本地开发时，可一键打包、重装当前版本并启动 Web：
+本地开发时，可一键打包、通过 npm `latest` 标签运行最新版 dsh、重装当前插件并启动 Web：
 
 ```sh
 pnpm dev

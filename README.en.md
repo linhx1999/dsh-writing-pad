@@ -36,7 +36,7 @@ Start the web GUI:
 dsh web
 ```
 
-For local development, package and reinstall the current version, then start the web GUI with:
+For local development, package the current plugin, run the latest dsh release from npm's `latest` tag, reinstall the plugin, and start the web GUI with:
 
 ```sh
 pnpm dev
